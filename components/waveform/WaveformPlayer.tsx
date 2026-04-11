@@ -37,11 +37,7 @@ function WebWaveformPlayer({ track }: WaveformPlayerProps) {
   const BARS = bars.length;
   const isActive = currentTrack?.id === track.id;
 
-  useEffect(() => {
-    fetchComments();
-  }, [track.id]);
-
-  async function fetchComments() {
+  const fetchComments = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('comments')
@@ -57,7 +53,11 @@ function WebWaveformPlayer({ track }: WaveformPlayerProps) {
     } catch (err) {
       console.error('Unexpected error:', err);
     }
-  }
+  }, [track.id]);
+
+  useEffect(() => {
+    fetchComments();
+  }, [fetchComments]);
 
   async function postComment(barIndex: number) {
     if (!user || !commentInput.trim()) return;

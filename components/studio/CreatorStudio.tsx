@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Platform, View, Text, ScrollView } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
@@ -425,6 +425,10 @@ export default function CreatorStudio() {
       console.error('Unexpected error:', err);
     }
   }, [user]);
+
+  useEffect(() => {
+    fetchMyTracks();
+  }, [fetchMyTracks]);
 
   if (Platform.OS !== 'web') {
     return (

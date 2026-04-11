@@ -207,7 +207,7 @@ function NativeDiscoveryPage() {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 }}
       >
         {GENRES.map((genre) => (
           <View

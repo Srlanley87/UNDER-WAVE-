@@ -22,6 +22,10 @@ interface FeedItem {
   avatar_url: string | null;
 }
 
+type TrackWithProfile = Track & {
+  profiles: { username: string; avatar_url: string | null } | null;
+};
+
 export default function FollowingFeed() {
   const user = useAuthStore((s) => s.user);
   const router = useRouter();
@@ -67,7 +71,7 @@ export default function FollowingFeed() {
         return;
       }
 
-      const feedItems: FeedItem[] = (tracks ?? []).map((row: Track & { profiles: { username: string; avatar_url: string | null } | null }) => ({
+      const feedItems: FeedItem[] = (tracks ?? []).map((row: TrackWithProfile) => ({
         track: {
           id: row.id,
           user_id: row.user_id,
