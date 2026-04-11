@@ -318,7 +318,7 @@ export default function FollowingFeed() {
 
           {/* Play button */}
           <TouchableOpacity
-            onPress={(e) => {
+            onPress={() => {
               setTrack(item.track);
             }}
             style={{
