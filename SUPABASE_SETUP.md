@@ -204,6 +204,9 @@ CREATE POLICY "follows_delete" ON public.follows FOR DELETE TO authenticated USI
 3. Toggle **"Public bucket"** to **ON** (so audio URLs are playable without sign-in)
 4. Click **Save**
 
+> **Cover images** are stored in the same `tracks` bucket under `{userId}/{trackId}/cover.<ext>`.
+> No second bucket is required unless you set `EXPO_PUBLIC_SUPABASE_COVER_BUCKET` to a different value.
+
 ### Storage Policies (run in SQL Editor)
 
 ```sql
@@ -230,6 +233,8 @@ CREATE POLICY "tracks_storage_delete"
   TO authenticated
   USING (bucket_id = 'tracks' AND (storage.foldername(name))[1] = auth.uid()::text);
 ```
+
+> **Note:** If you see any existing conflicting policies under Storage → Policies, delete them before running the SQL above to avoid duplicates.
 
 ---
 
@@ -275,9 +280,11 @@ After completing all steps above:
 
 | Error | Fix |
 |-------|-----|
-| Upload stuck at 10% / "Bucket not found" | Create the `tracks` bucket in Supabase Storage (step 6) |
-| Upload blocked by policy | Add storage INSERT policy for authenticated users (step 6) |
+| Upload stuck / never completes | Create the `tracks` bucket in Supabase Storage (step 6) and add the INSERT policy |
+| "Bucket not found" error on upload | Bucket name must be exactly `tracks` (lowercase) — create it as a **Public** bucket |
+| Upload blocked by policy | Add the storage INSERT policy for authenticated users shown in step 6 |
 | "Email not confirmed" on sign-in | Disable email confirmation in Supabase Auth settings (step 2) |
 | Blank page after Google auth | Set correct redirect URLs in Supabase URL Configuration (step 3) |
-| Profile not created after sign-up | Run the trigger SQL (step 5) |
-| Session lost on page refresh | Check environment variables are set in Vercel (step 1) |
+| Profile not created after sign-up | Run the trigger SQL in step 5; also run the backfill SQL in step 7 for existing users |
+| Session lost on page refresh | Verify `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` are set in Vercel env vars and redeploy |
+| Profile page spins forever | Session env vars are wrong/missing, or the `profiles` table or RLS policies are not set up — follow steps 1 and 5 |

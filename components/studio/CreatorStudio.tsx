@@ -12,67 +12,14 @@ const GENRES = ['Hip-Hop', 'Electronic', 'Lo-Fi', 'Indie', 'R&B', 'Afrobeats'];
 const TRACKS_BUCKET = 'tracks';
 const COVER_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_COVER_BUCKET || TRACKS_BUCKET;
 
-/**
- * Upload a file to Supabase Storage via XMLHttpRequest so we get real
- * byte-level progress events.  Falls back to the supabase-js client when
- * XHR isn't available (e.g. non-web environments, missing env vars).
- */
-async function uploadWithProgress(
-  bucket: string,
-  path: string,
-  file: File,
-  accessToken: string,
-  onProgress: (pct: number) => void
-): Promise<void> {
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-  if (!supabaseUrl || typeof XMLHttpRequest === 'undefined') {
-    // Fallback: supabase-js client (no progress events)
-    const { error } = await supabase.storage.from(bucket).upload(path, file, {
-      upsert: false,
-      contentType: file.type || undefined,
-    });
-    if (error) throw error;
-    return;
-  }
-
-  return new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    // Supabase Storage REST endpoint for object upload
-    xhr.open('POST', `${supabaseUrl}/storage/v1/object/${bucket}/${path}`);
-    xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
-    // Supabase Storage REST API accepts a raw binary body; the Content-Type header
-    // must be the file's MIME type (not multipart/form-data).
-    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-    xhr.setRequestHeader('x-upsert', 'false');
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
-        onProgress(Math.round((e.loaded / e.total) * 100));
-      }
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve();
-      } else {
-        let msg = `Upload failed (HTTP ${xhr.status})`;
-        try {
-          const resp = JSON.parse(xhr.responseText) as { message?: string; error?: string };
-          if (resp.message || resp.error) {
-            msg = resp.message ?? resp.error ?? msg;
-          } else {
-            console.warn('Unexpected storage error shape:', xhr.responseText);
-          }
-        } catch { /* responseText is not JSON — keep generic message */ }
-        reject(new Error(msg));
-      }
-    };
-    xhr.onerror = () => reject(new Error('Network error during upload. Check your connection.'));
-    xhr.onabort = () => reject(new Error('Upload was cancelled.'));
-
-    xhr.send(file);
-  });
-}
+// Upload stage labels shown in the progress bar caption.
+const UPLOAD_STAGES = [
+  'Starting upload…',
+  'Uploading audio…',
+  'Uploading cover art…',
+  'Saving track…',
+  'Upload complete!',
+];
 
 function UploadTrackCard() {
   const user = useAuthStore((s) => s.user);
@@ -82,6 +29,7 @@ function UploadTrackCard() {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [progress, setProgress] = useState(0);
+  const [stage, setStage] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +58,7 @@ function UploadTrackCard() {
     setUploading(true);
     setError(null);
     setProgress(5);
+    setStage(0); // "Starting upload…"
 
     try {
       // Verify session is active before uploading
@@ -120,68 +69,88 @@ function UploadTrackCard() {
       }
 
       const artistName = profile?.username || user.email?.split('@')[0] || 'Unknown Artist';
-      const audioPath = `${user.id}/${Date.now()}_${audioFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
-      try {
-        // Upload audio with real byte-level progress (10 % → 50 %)
-        await uploadWithProgress(
-          TRACKS_BUCKET,
-          audioPath,
-          audioFile,
-          session.access_token,
-          (pct) => setProgress(10 + Math.round(pct * 0.4))
-        );
-      } catch (audioErr: unknown) {
-        const msg = audioErr instanceof Error ? audioErr.message.toLowerCase() : '';
-        if (msg.includes('bucket not found') || msg.includes('bucket')) {
-          throw new Error('Storage bucket "tracks" not found. Please create it in your Supabase dashboard under Storage → New Bucket (name it "tracks", make it Public).');
+      // Use a stable ID for the upload so retries don't create duplicate files.
+      const trackId =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      const audioExt = audioFile.name.split('.').pop()?.toLowerCase() || 'mp3';
+      const audioPath = `${user.id}/${trackId}/audio.${audioExt}`;
+
+      setProgress(10);
+      setStage(1); // "Uploading audio…"
+
+      // Use the supabase-js client directly.  A raw XHR call requires the
+      // additional `apikey` header and is susceptible to CORS preflight issues;
+      // the client handles both automatically.
+      const { error: audioError } = await supabase.storage
+        .from(TRACKS_BUCKET)
+        .upload(audioPath, audioFile, {
+          upsert: true,
+          contentType: audioFile.type || 'audio/mpeg',
+        });
+
+      if (audioError) {
+        const msg = audioError.message.toLowerCase();
+        if (msg.includes('bucket') || msg.includes('not found')) {
+          throw new Error(
+            'Storage bucket "tracks" not found. ' +
+            'Create it in Supabase → Storage → New Bucket (name "tracks", toggle Public ON).'
+          );
         }
         if (msg.includes('policy') || msg.includes('not authorized') || msg.includes('permission')) {
-          throw new Error('Upload permission denied. Check that your Supabase storage RLS policies allow authenticated uploads to the "tracks" bucket.');
+          throw new Error(
+            'Upload blocked by storage RLS policy. ' +
+            'Add an INSERT policy on storage.objects for authenticated users (bucket_id = \'tracks\').'
+          );
         }
-        throw audioErr;
+        throw new Error(`Audio upload failed: ${audioError.message}`);
       }
+
       setProgress(50);
 
-      const { data: audioUrl } = supabase.storage
+      const { data: audioUrlData } = supabase.storage
         .from(TRACKS_BUCKET)
         .getPublicUrl(audioPath);
+      const audioPublicUrl = audioUrlData.publicUrl;
 
-      let coverUrlStr: string | null = null;
+      let coverPublicUrl: string | null = null;
 
       if (coverFile) {
-        const coverPath =
-          COVER_BUCKET === TRACKS_BUCKET
-            ? `covers/${user.id}/${Date.now()}_${coverFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
-            : `${user.id}/${Date.now()}_${coverFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        setStage(2); // "Uploading cover art…"
 
-        try {
-          // Upload cover art with real progress (50 % → 75 %)
-          await uploadWithProgress(
-            COVER_BUCKET,
-            coverPath,
-            coverFile,
-            session.access_token,
-            (pct) => setProgress(50 + Math.round(pct * 0.25))
-          );
-        } catch (coverErr: unknown) {
-          throw new Error(coverErr instanceof Error ? coverErr.message : 'Cover upload failed');
-        }
+        const coverExt = coverFile.name.split('.').pop()?.toLowerCase() || 'jpg';
+        const coverPath = `${user.id}/${trackId}/cover.${coverExt}`;
 
-        const { data: coverUrlData } = supabase.storage
+        const { error: coverError } = await supabase.storage
           .from(COVER_BUCKET)
-          .getPublicUrl(coverPath);
-        coverUrlStr = coverUrlData.publicUrl;
+          .upload(coverPath, coverFile, {
+            upsert: true,
+            contentType: coverFile.type || 'image/jpeg',
+          });
+
+        if (coverError) {
+          // Cover is optional — log and continue rather than aborting.
+          console.warn('Cover upload failed (non-fatal):', coverError.message);
+        } else {
+          const { data: coverUrlData } = supabase.storage
+            .from(COVER_BUCKET)
+            .getPublicUrl(coverPath);
+          coverPublicUrl = coverUrlData.publicUrl;
+        }
       }
 
-      setProgress(78);
+      setProgress(75);
+      setStage(3); // "Saving track…"
 
       const { error: dbErr } = await supabase.from('tracks').insert({
         user_id: user.id,
         title: title.trim(),
         artist: artistName,
-        audio_url: audioUrl.publicUrl,
-        cover_url: coverUrlStr,
+        audio_url: audioPublicUrl,
+        cover_url: coverPublicUrl,
         genre,
         play_count: 0,
         like_count: 0,
@@ -190,27 +159,36 @@ function UploadTrackCard() {
       if (dbErr) {
         const dbMsg = dbErr.message.toLowerCase();
         if (dbMsg.includes('policy') || dbMsg.includes('permission') || dbErr.code === '42501') {
-          throw new Error('Database permission denied. Make sure the "tracks" table has an RLS INSERT policy for authenticated users.');
+          throw new Error(
+            'Database permission denied. ' +
+            'Add an INSERT RLS policy on the tracks table: auth.uid() = user_id.'
+          );
         }
         if (dbMsg.includes('violates foreign key') || dbErr.code === '23503') {
-          throw new Error('Your profile does not exist yet. Please visit the Profile tab first, then try again.');
+          throw new Error(
+            'Your profile does not exist yet. ' +
+            'Visit the Profile tab once, then retry the upload.'
+          );
         }
-        throw dbErr;
+        throw new Error(`Failed to save track record: ${dbErr.message}`);
       }
 
-      // Mark has_uploaded on profile
+      // Mark has_uploaded on profile (best-effort, non-fatal)
       await supabase
         .from('profiles')
         .update({ has_uploaded: true })
         .eq('id', user.id);
 
       setProgress(100);
+      setStage(4); // "Upload complete!"
       setSuccess(true);
       setTitle('');
       setAudioFile(null);
       setCoverFile(null);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Upload failed. Check your Supabase storage and database configuration.');
+      const msg = err instanceof Error ? err.message : 'Upload failed. Check your Supabase storage and database configuration.';
+      setError(msg);
+      console.error('[Upload] error:', err);
     } finally {
       setUploading(false);
     }
@@ -365,23 +343,33 @@ function UploadTrackCard() {
 
         {/* Progress bar */}
         {uploading && (
-          <div
-            style={{
-              backgroundColor: '#111111',
-              borderRadius: 100,
-              height: 6,
-              overflow: 'hidden',
-            }}
-          >
-            <motion.div
-              animate={{ width: `${progress}%` }}
-              transition={{ duration: 0.4 }}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12 }}>
+                {UPLOAD_STAGES[stage]}
+              </span>
+              <span style={{ color: '#F59E0B', fontSize: 12, fontWeight: 600 }}>
+                {progress}%
+              </span>
+            </div>
+            <div
               style={{
-                height: '100%',
-                background: 'linear-gradient(90deg, #F59E0B, #F59E0B)',
+                backgroundColor: '#111111',
                 borderRadius: 100,
+                height: 6,
+                overflow: 'hidden',
               }}
-            />
+            >
+              <motion.div
+                animate={{ width: `${progress}%` }}
+                transition={{ duration: 0.4 }}
+                style={{
+                  height: '100%',
+                  background: 'linear-gradient(90deg, #F59E0B, #D97706)',
+                  borderRadius: 100,
+                }}
+              />
+            </div>
           </div>
         )}
 
@@ -401,7 +389,7 @@ function UploadTrackCard() {
             opacity: uploading ? 0.7 : 1,
           }}
         >
-          {uploading ? `Uploading… ${progress}%` : 'Upload Track'}
+          {uploading ? UPLOAD_STAGES[stage] : 'Upload Track'}
         </motion.button>
       </div>
     </div>
