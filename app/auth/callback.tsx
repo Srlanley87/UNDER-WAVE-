@@ -14,43 +14,79 @@ export default function AuthCallback() {
       return;
     }
 
-    // With detectSessionInUrl: true, Supabase automatically processes the code
-    // from the URL. We just need to wait for the auth state to change.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        router.replace('/discovery');
-      }
-      if (event === 'SIGNED_OUT') {
-        router.replace('/discovery');
-      }
-    });
-
-    // Also attempt explicit code exchange for robustness
     const url = typeof window !== 'undefined' ? window.location.href : '';
     const hasCode = url.includes('code=');
     const hasError = url.includes('error=');
 
     if (hasError) {
-      const params = new URLSearchParams(new URL(url).search);
-      const desc = params.get('error_description') ?? 'Authentication failed';
-      setErrorMsg(decodeURIComponent(desc));
+      try {
+        const params = new URLSearchParams(new URL(url).search);
+        const desc = params.get('error_description') ?? 'Authentication failed';
+        setErrorMsg(decodeURIComponent(desc));
+      } catch {
+        setErrorMsg('Authentication failed');
+      }
       setStatus('error');
-      setTimeout(() => router.replace('/discovery'), 3000);
-      subscription.unsubscribe();
+      setTimeout(() => router.replace('/'), 3000);
       return;
     }
 
-    if (!hasCode) {
-      // No code in URL – just redirect home
-      router.replace('/discovery');
-      subscription.unsubscribe();
-      return;
+    // Listen for auth state changes first (before async work)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
+        subscription.unsubscribe();
+        router.replace('/discovery');
+      }
+    });
+
+    async function handleCallback() {
+      // 1. Check if Supabase already auto-exchanged the code (detectSessionInUrl: true)
+      const { data: { session: existingSession } } = await supabase.auth.getSession();
+      if (existingSession) {
+        subscription.unsubscribe();
+        router.replace('/discovery');
+        return;
+      }
+
+      // 2. If code is present, explicitly exchange it (handles race conditions)
+      if (hasCode) {
+        try {
+          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(url);
+          if (exchangeError) {
+            console.error('Code exchange error:', exchangeError.message);
+            // Still check for a session – the exchange might have partially succeeded
+            const { data: { session: retrySession } } = await supabase.auth.getSession();
+            if (retrySession) {
+              subscription.unsubscribe();
+              router.replace('/discovery');
+              return;
+            }
+            setErrorMsg(exchangeError.message);
+            setStatus('error');
+            setTimeout(() => router.replace('/'), 3000);
+            return;
+          }
+          // Success – the onAuthStateChange listener will fire and redirect
+        } catch (err) {
+          console.error('Unexpected callback error:', err);
+          setErrorMsg('Unexpected error during sign-in.');
+          setStatus('error');
+          setTimeout(() => router.replace('/'), 3000);
+          return;
+        }
+      } else {
+        // No code in URL – user may have navigated here directly
+        router.replace('/discovery');
+        return;
+      }
     }
 
-    // Safety fallback: if SIGNED_IN event doesn't fire within 8 seconds, redirect anyway
+    handleCallback();
+
+    // Safety fallback: redirect after 10 seconds regardless
     const timeout = setTimeout(() => {
       router.replace('/discovery');
-    }, 8000);
+    }, 10000);
 
     return () => {
       subscription.unsubscribe();

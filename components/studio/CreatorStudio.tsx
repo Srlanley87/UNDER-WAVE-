@@ -11,9 +11,12 @@ import { Ionicons } from '@expo/vector-icons';
 const GENRES = ['Hip-Hop', 'Electronic', 'Lo-Fi', 'Indie', 'R&B', 'Afrobeats'];
 const TRACKS_BUCKET = 'tracks';
 const COVER_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_COVER_BUCKET || TRACKS_BUCKET;
+const MAX_AUDIO_MB = 50;
+const MAX_COVER_MB = 5;
 
 function UploadTrackCard() {
   const user = useAuthStore((s) => s.user);
+  const profile = useAuthStore((s) => s.profile);
   const [title, setTitle] = useState('');
   const [genre, setGenre] = useState(GENRES[0]);
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -29,17 +32,48 @@ function UploadTrackCard() {
       return;
     }
 
+    // File size validation
+    if (audioFile.size > MAX_AUDIO_MB * 1024 * 1024) {
+      setError(`Audio file must be smaller than ${MAX_AUDIO_MB}MB.`);
+      return;
+    }
+    if (coverFile && coverFile.size > MAX_COVER_MB * 1024 * 1024) {
+      setError(`Cover image must be smaller than ${MAX_COVER_MB}MB.`);
+      return;
+    }
+
     setUploading(true);
     setError(null);
     setProgress(10);
 
     try {
-      const audioPath = `${user.id}/${Date.now()}_${audioFile.name}`;
+      // Verify session is active before uploading
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setError('Your session has expired. Please sign out and sign in again.');
+        return;
+      }
+
+      const artistName = profile?.username ?? user.email?.split('@')[0] ?? 'Unknown Artist';
+      const audioPath = `${user.id}/${Date.now()}_${audioFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+
       const { error: audioErr } = await supabase.storage
         .from(TRACKS_BUCKET)
-        .upload(audioPath, audioFile);
+        .upload(audioPath, audioFile, { upsert: false });
 
-      if (audioErr) throw audioErr;
+      if (audioErr) {
+        if (audioErr.message.includes('Bucket not found') || audioErr.message.includes('bucket')) {
+          throw new Error(
+            `Storage bucket "${TRACKS_BUCKET}" not found. Please create a public bucket named "tracks" in Supabase Storage.`
+          );
+        }
+        if (audioErr.message.includes('row-level security') || audioErr.message.includes('policy')) {
+          throw new Error(
+            'Upload blocked by storage policy. Please add an INSERT policy for authenticated users on the "tracks" bucket in Supabase Storage.'
+          );
+        }
+        throw new Error(audioErr.message);
+      }
       setProgress(50);
 
       const { data: audioUrl } = supabase.storage
@@ -51,13 +85,13 @@ function UploadTrackCard() {
       if (coverFile) {
         const coverPath =
           COVER_BUCKET === TRACKS_BUCKET
-            ? `covers/${user.id}/${Date.now()}_${coverFile.name}`
-            : `${user.id}/${Date.now()}_${coverFile.name}`;
+            ? `covers/${user.id}/${Date.now()}_${coverFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+            : `${user.id}/${Date.now()}_${coverFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
         const { error: coverErr } = await supabase.storage
           .from(COVER_BUCKET)
-          .upload(coverPath, coverFile);
+          .upload(coverPath, coverFile, { upsert: false });
 
-        if (coverErr) throw coverErr;
+        if (coverErr) throw new Error(coverErr.message);
 
         const { data: coverUrlData } = supabase.storage
           .from(COVER_BUCKET)
@@ -70,7 +104,7 @@ function UploadTrackCard() {
       const { error: dbErr } = await supabase.from('tracks').insert({
         user_id: user.id,
         title: title.trim(),
-        artist: 'You',
+        artist: artistName,
         audio_url: audioUrl.publicUrl,
         cover_url: coverUrlStr,
         genre,
@@ -78,7 +112,14 @@ function UploadTrackCard() {
         like_count: 0,
       });
 
-      if (dbErr) throw dbErr;
+      if (dbErr) {
+        if (dbErr.message.includes('row-level security') || dbErr.message.includes('policy')) {
+          throw new Error(
+            'Database write blocked by policy. Please enable RLS INSERT policy for authenticated users on the "tracks" table.'
+          );
+        }
+        throw new Error(dbErr.message);
+      }
 
       // Mark has_uploaded on profile
       await supabase
@@ -92,7 +133,7 @@ function UploadTrackCard() {
       setAudioFile(null);
       setCoverFile(null);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      setError(err instanceof Error ? err.message : 'Upload failed. Check your Supabase Storage settings.');
     } finally {
       setUploading(false);
     }
