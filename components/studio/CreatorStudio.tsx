@@ -13,6 +13,34 @@ const TRACKS_BUCKET = 'tracks';
 // Cover art lives in a dedicated "covers" bucket.  Set EXPO_PUBLIC_SUPABASE_COVER_BUCKET
 // to override (e.g. if you renamed the bucket), otherwise the default is "covers".
 const COVER_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_COVER_BUCKET || 'covers';
+const AUTH_SESSION_TIMEOUT_MS = 15000;
+const STORAGE_FALLBACK_TIMEOUT_MS = 300000;
+const DB_TIMEOUT_MS = 45000;
+
+function isAbortLikeError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return err.name === 'AbortError' || msg.includes('aborted') || msg.includes('timeout');
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+      }),
+    ]);
+  } catch (err) {
+    if (isAbortLikeError(err)) {
+      throw new Error(timeoutMessage);
+    }
+    throw err;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
 
 /**
  * Upload a file to Supabase Storage via XMLHttpRequest so we get real
@@ -36,10 +64,14 @@ async function uploadWithProgress(
       throw new Error('Supabase credentials not configured. Set EXPO_PUBLIC_SUPABASE_ANON_KEY in your environment.');
     }
     // Fallback: supabase-js client (no progress events)
-    const { error } = await supabase.storage.from(bucket).upload(path, file, {
-      upsert: false,
-      contentType: file.type || undefined,
-    });
+    const { error } = await withTimeout(
+      supabase.storage.from(bucket).upload(path, file, {
+        upsert: false,
+        contentType: file.type || undefined,
+      }),
+      STORAGE_FALLBACK_TIMEOUT_MS,
+      'Upload timed out while sending file to storage. Check your network and Supabase project status.'
+    );
     if (error) throw error;
     return;
   }
@@ -175,9 +207,9 @@ function UploadTrackCard() {
       // IndexedDB lock and will "steal" it, causing the upload to fail.
       let accessToken: string;
       try {
-        accessToken = await getAccessTokenNoLock();
+        accessToken = await getAccessTokenNoLock(AUTH_SESSION_TIMEOUT_MS);
       } catch {
-        setError('Session expired. Please sign out and sign in again.');
+        setError('Session check timed out or expired. Close duplicate tabs, then sign out and sign in again.');
         return;
       }
 
@@ -227,7 +259,7 @@ function UploadTrackCard() {
       // function returns.  No reference is kept, so the auth lock stays free.
 
       console.log('[DB] Inserting track record with audio_url...');
-      const { error: dbErr } = await supabase.from('tracks').insert({
+      const trackInsertPromise = supabase.from('tracks').insert({
         user_id: user.id,
         title: title.trim(),
         artist: artistName,
@@ -237,6 +269,11 @@ function UploadTrackCard() {
         play_count: 0,
         like_count: 0,
       });
+      const { error: dbErr } = await withTimeout(
+        trackInsertPromise,
+        DB_TIMEOUT_MS,
+        'Saving track metadata timed out. Your file may be uploaded, but database save did not finish.'
+      );
 
       if (dbErr) {
         console.error('[DB] Insert error:', dbErr);
@@ -253,10 +290,19 @@ function UploadTrackCard() {
       console.log('[DB] Track inserted successfully');
 
       // Mark has_uploaded on profile
-      await supabase
-        .from('profiles')
-        .update({ has_uploaded: true })
-        .eq('id', user.id);
+      try {
+        const profileUpdatePromise = supabase
+          .from('profiles')
+          .update({ has_uploaded: true })
+          .eq('id', user.id);
+        await withTimeout(
+          profileUpdatePromise,
+          DB_TIMEOUT_MS,
+          'Profile update timed out after upload.'
+        );
+      } catch (profileErr) {
+        console.warn('[DB] Profile update skipped:', profileErr);
+      }
 
       console.log('[SUCCESS] Upload complete');
       setSuccess(true);
