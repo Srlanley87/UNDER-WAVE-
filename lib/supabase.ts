@@ -16,3 +16,22 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: isClientSideWeb,
   },
 });
+
+/**
+ * Retrieve the current session's access token as a plain string and
+ * immediately release the auth lock.  Callers should use this token
+ * directly in XHR / fetch requests so the lock is never held while a
+ * long-running upload is in progress.  Holding a `Session` object
+ * reference during an upload can cause the Supabase autoRefreshToken
+ * background job to race for the same IndexedDB lock and produce the
+ * error "Lock … was released because another request stole it".
+ */
+export async function getAccessTokenNoLock(): Promise<string> {
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data.session?.access_token) {
+    throw new Error('No active session. Please sign in again.');
+  }
+  // Return only the token string — do NOT keep a reference to the
+  // Session object so the lock is freed as soon as this function returns.
+  return data.session.access_token;
+}

@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Platform, View, Text, ScrollView } from 'react-native';
-import { supabase } from '@/lib/supabase';
+import { supabase, getAccessTokenNoLock } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 import type { Track } from '@/lib/database.types';
 import ReplayHeatmap from '@/components/studio/ReplayHeatmap';
@@ -135,6 +135,8 @@ function UploadTrackCard() {
   const [uploading, setUploading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Mutex: prevent concurrent uploads that would fight over the auth lock
+  const isUploadingRef = useRef(false);
 
   const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
   const MAX_COVER_BYTES = 5 * 1024 * 1024;
@@ -157,14 +159,25 @@ function UploadTrackCard() {
       return;
     }
 
+    // Mutex guard — only one upload at a time to avoid auth lock contention
+    if (isUploadingRef.current) {
+      setError('Upload already in progress, please wait…');
+      return;
+    }
+    isUploadingRef.current = true;
     setUploading(true);
     setError(null);
 
     try {
-      // Verify session is active before uploading
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setError('Your session has expired. Please sign out and sign in again.');
+      // Get the access token as a plain string and release the auth lock
+      // immediately.  Do NOT hold a Session object reference during the XHR
+      // upload — the autoRefreshToken background job competes for the same
+      // IndexedDB lock and will "steal" it, causing the upload to fail.
+      let accessToken: string;
+      try {
+        accessToken = await getAccessTokenNoLock();
+      } catch {
+        setError('Session expired. Please sign out and sign in again.');
         return;
       }
 
@@ -176,7 +189,7 @@ function UploadTrackCard() {
         TRACKS_BUCKET,
         audioPath,
         audioFile,
-        session.access_token,
+        accessToken,
         () => {} // progress events logged inside uploadWithProgress
       );
 
@@ -199,7 +212,7 @@ function UploadTrackCard() {
           COVER_BUCKET,
           coverPath,
           coverFile,
-          session.access_token,
+          accessToken,
           () => {}
         );
 
@@ -209,6 +222,9 @@ function UploadTrackCard() {
         coverUrlStr = coverUrlData.publicUrl;
         console.log(`[UPLOAD] Cover URL: ${coverUrlStr}`);
       }
+
+      // accessToken is a local string — it will be garbage-collected when this
+      // function returns.  No reference is kept, so the auth lock stays free.
 
       console.log('[DB] Inserting track record with audio_url...');
       const { error: dbErr } = await supabase.from('tracks').insert({
@@ -252,6 +268,7 @@ function UploadTrackCard() {
       console.error('[UPLOAD] Upload failed:', msg);
       setError(msg);
     } finally {
+      isUploadingRef.current = false;
       setUploading(false);
     }
   }
