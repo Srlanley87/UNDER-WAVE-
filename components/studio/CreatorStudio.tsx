@@ -24,7 +24,6 @@ function UploadTrackCard() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 100 MB limit for audio, 5 MB for cover art
   const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
   const MAX_COVER_BYTES = 5 * 1024 * 1024;
 
@@ -51,10 +50,19 @@ function UploadTrackCard() {
     setProgress(10);
 
     try {
-      const audioPath = `${user.id}/${Date.now()}_${audioFile.name}`;
+      // Verify session is active before uploading
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setError('Your session has expired. Please sign out and sign in again.');
+        return;
+      }
+
+      const artistName = profile?.username || user.email?.split('@')[0] || 'Unknown Artist';
+      const audioPath = `${user.id}/${Date.now()}_${audioFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+
       const { error: audioErr } = await supabase.storage
         .from(TRACKS_BUCKET)
-        .upload(audioPath, audioFile);
+        .upload(audioPath, audioFile, { upsert: false });
 
       if (audioErr) {
         const msg = audioErr.message.toLowerCase();
@@ -77,13 +85,13 @@ function UploadTrackCard() {
       if (coverFile) {
         const coverPath =
           COVER_BUCKET === TRACKS_BUCKET
-            ? `covers/${user.id}/${Date.now()}_${coverFile.name}`
-            : `${user.id}/${Date.now()}_${coverFile.name}`;
+            ? `covers/${user.id}/${Date.now()}_${coverFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+            : `${user.id}/${Date.now()}_${coverFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
         const { error: coverErr } = await supabase.storage
           .from(COVER_BUCKET)
-          .upload(coverPath, coverFile);
+          .upload(coverPath, coverFile, { upsert: false });
 
-        if (coverErr) throw coverErr;
+        if (coverErr) throw new Error(coverErr.message);
 
         const { data: coverUrlData } = supabase.storage
           .from(COVER_BUCKET)
@@ -92,8 +100,6 @@ function UploadTrackCard() {
       }
 
       setProgress(80);
-
-      const artistName = profile?.username || user.email?.split('@')[0] || 'Unknown Artist';
 
       const { error: dbErr } = await supabase.from('tracks').insert({
         user_id: user.id,

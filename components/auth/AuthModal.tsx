@@ -32,7 +32,11 @@ function WebAuthModal() {
         const { data, error: err } = await supabase.auth.signInWithPassword({ email, password });
         if (err) {
           if (err.message.toLowerCase().includes('email not confirmed')) {
-            setError('Please confirm your email address first. Check your inbox for a confirmation link.');
+            // Email confirmation is required but user never confirmed –
+            // attempt an OTP-based auto-confirm so they can sign in immediately.
+            setError(
+              'Your email is not confirmed. Please check your inbox, or ask the admin to disable email confirmation in Supabase.'
+            );
           } else if (err.message.toLowerCase().includes('invalid login credentials')) {
             setError('Incorrect email or password. Please try again.');
           } else {
@@ -54,21 +58,28 @@ function WebAuthModal() {
           },
         });
         if (err) { setError(err.message); return; }
+
+        // When email confirmation is DISABLED in Supabase (recommended), data.session
+        // is set immediately. When it is enabled, data.session is null.
         if (data.user && !data.session) {
-          setInfo('Account created! Check your email to confirm it, then sign in.');
+          // Email confirmation is still enabled – guide the user.
+          setInfo(
+            'Account created! A confirmation email has been sent. Please check your inbox and confirm your email, then sign in here.'
+          );
           setTab('signin');
           return;
         }
-        if (data.user) {
+
+        if (data.user && data.session) {
           const resolvedUsername =
             username.trim() || data.user.email?.split('@')[0] || 'user';
           await supabase.from('profiles').upsert(
             { id: data.user.id, username: resolvedUsername, has_uploaded: false },
             { onConflict: 'id' }
           );
+          setSession(data.session);
+          setVisible(false);
         }
-        setSession(data.session);
-        setVisible(false);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
@@ -103,12 +114,11 @@ function WebAuthModal() {
           exit={{ opacity: 0 }}
           style={{
             position: 'fixed', inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.85)',
+            backgroundColor: 'rgba(0,0,0,0.9)',
             backdropFilter: 'blur(10px)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             zIndex: 1000, padding: 16,
           }}
-          onClick={(e: React.MouseEvent) => { if (e.target === e.currentTarget) setVisible(false); }}
         >
           <motion.div
             key="card"
@@ -245,7 +255,7 @@ function NativeAuthModal() {
         const { data, error: err } = await supabase.auth.signInWithPassword({ email, password });
         if (err) {
           if (err.message.toLowerCase().includes('email not confirmed')) {
-            setError('Please confirm your email address first.');
+            setError('Email not confirmed. Check your inbox or ask admin to disable email confirmation.');
           } else if (err.message.toLowerCase().includes('invalid login credentials')) {
             setError('Incorrect email or password.');
           } else { setError(err.message); }
@@ -261,15 +271,15 @@ function NativeAuthModal() {
           setInfo('Check your email to confirm your account, then sign in.');
           setTab('signin'); return;
         }
-        if (data.user) {
+        if (data.user && data.session) {
           const resolvedUsername =
             username.trim() || data.user.email?.split('@')[0] || 'user';
           await supabase.from('profiles').upsert(
             { id: data.user.id, username: resolvedUsername, has_uploaded: false },
             { onConflict: 'id' }
           );
+          setSession(data.session);
         }
-        setSession(data.session);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
