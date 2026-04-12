@@ -55,8 +55,10 @@ function WebAuthModal() {
           return;
         }
         if (data.user) {
+          const resolvedUsername =
+            username.trim() || data.user.email?.split('@')[0] || 'user';
           await supabase.from('profiles').upsert(
-            { id: data.user.id, username: username || data.user.email?.split('@')[0] || 'user', has_uploaded: false },
+            { id: data.user.id, username: resolvedUsername, has_uploaded: false },
             { onConflict: 'id' }
           );
         }
@@ -255,8 +257,10 @@ function NativeAuthModal() {
           setTab('signin'); return;
         }
         if (data.user) {
+          const resolvedUsername =
+            username.trim() || data.user.email?.split('@')[0] || 'user';
           await supabase.from('profiles').upsert(
-            { id: data.user.id, username: username || data.user.email?.split('@')[0] || 'user', has_uploaded: false },
+            { id: data.user.id, username: resolvedUsername, has_uploaded: false },
             { onConflict: 'id' }
           );
         }
