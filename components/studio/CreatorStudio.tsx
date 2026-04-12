@@ -44,7 +44,14 @@ async function uploadWithProgress(
     // Supabase's API gateway (Kong) requires the apikey header on every request,
     // even when using a Bearer JWT.  Without it the gateway returns 403 and the
     // upload stalls at 0 % / 5 %.
-    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+    if (!anonKey) {
+      reject(new Error(
+        'EXPO_PUBLIC_SUPABASE_ANON_KEY is not configured. ' +
+        'Add it to your .env.local file and restart the dev server.'
+      ));
+      return;
+    }
     xhr.setRequestHeader('apikey', anonKey);
     xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
     // Supabase Storage REST API accepts a raw binary body; the Content-Type header
