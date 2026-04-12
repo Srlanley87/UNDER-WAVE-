@@ -57,10 +57,11 @@ function UploadTrackCard() {
         .upload(audioPath, audioFile);
 
       if (audioErr) {
-        if (audioErr.message.includes('Bucket not found') || audioErr.message.includes('bucket')) {
+        const msg = audioErr.message.toLowerCase();
+        if (msg.includes('bucket not found') || msg.includes('bucket')) {
           throw new Error('Storage bucket "tracks" not found. Please create it in your Supabase dashboard under Storage → New Bucket (name it "tracks", make it Public).');
         }
-        if (audioErr.message.includes('policy') || audioErr.message.includes('not authorized') || audioErr.message.includes('permission')) {
+        if (msg.includes('policy') || msg.includes('not authorized') || msg.includes('permission')) {
           throw new Error('Upload permission denied. Check that your Supabase storage RLS policies allow authenticated uploads to the "tracks" bucket.');
         }
         throw audioErr;
@@ -106,10 +107,11 @@ function UploadTrackCard() {
       });
 
       if (dbErr) {
-        if (dbErr.message.includes('policy') || dbErr.message.includes('permission') || dbErr.code === '42501') {
+        const dbMsg = dbErr.message.toLowerCase();
+        if (dbMsg.includes('policy') || dbMsg.includes('permission') || dbErr.code === '42501') {
           throw new Error('Database permission denied. Make sure the "tracks" table has an RLS INSERT policy for authenticated users.');
         }
-        if (dbErr.message.includes('violates foreign key') || dbErr.code === '23503') {
+        if (dbMsg.includes('violates foreign key') || dbErr.code === '23503') {
           throw new Error('Your profile does not exist yet. Please visit the Profile tab first, then try again.');
         }
         throw dbErr;
