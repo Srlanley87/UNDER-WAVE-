@@ -27,7 +27,14 @@ async function uploadWithProgress(
   onProgress: (pct: number) => void
 ): Promise<void> {
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  console.log(`[UPLOAD] File selected: ${file.name} (${file.size} bytes, type: ${file.type || 'unknown'})`);
+
   if (!supabaseUrl || typeof XMLHttpRequest === 'undefined') {
+    console.log('[UPLOAD] Using supabase-js fallback (XHR unavailable or no URL)');
+    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+    if (!anonKey) {
+      throw new Error('Supabase credentials not configured. Set EXPO_PUBLIC_SUPABASE_ANON_KEY in your environment.');
+    }
     // Fallback: supabase-js client (no progress events)
     const { error } = await supabase.storage.from(bucket).upload(path, file, {
       upsert: false,
@@ -37,52 +44,82 @@ async function uploadWithProgress(
     return;
   }
 
+  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  if (!anonKey) {
+    throw new Error(
+      'Supabase credentials not configured. Add EXPO_PUBLIC_SUPABASE_ANON_KEY to your .env.local file and restart the dev server.'
+    );
+  }
+
+  const uploadUrl = `${supabaseUrl}/storage/v1/object/${bucket}/${path}`;
+  console.log(`[UPLOAD] Starting upload to: ${uploadUrl}`);
+
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     // Supabase Storage REST endpoint for object upload
-    xhr.open('POST', `${supabaseUrl}/storage/v1/object/${bucket}/${path}`);
+    xhr.open('POST', uploadUrl);
     // Supabase's API gateway (Kong) requires the apikey header on every request,
     // even when using a Bearer JWT.  Without it the gateway returns 403 and the
     // upload stalls at 0 % / 5 %.
-    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-    if (!anonKey) {
-      reject(new Error(
-        'EXPO_PUBLIC_SUPABASE_ANON_KEY is not configured. ' +
-        'Add it to your .env.local file and restart the dev server.'
-      ));
-      return;
-    }
     xhr.setRequestHeader('apikey', anonKey);
     xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
     // Supabase Storage REST API accepts a raw binary body; the Content-Type header
     // must be the file's MIME type (not multipart/form-data).
     xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
     xhr.setRequestHeader('x-upsert', 'false');
+    // Set a generous timeout so the upload doesn't hang indefinitely
+    xhr.timeout = 300000; // 5 minutes
+
+    console.log('[UPLOAD] Headers set: apikey, Authorization, Content-Type');
+    console.log('[UPLOAD] Sending file...');
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
-        onProgress(Math.round((e.loaded / e.total) * 100));
+        const pct = Math.round((e.loaded / e.total) * 100);
+        const loadedMB = (e.loaded / 1024 / 1024).toFixed(1);
+        const totalMB = (e.total / 1024 / 1024).toFixed(1);
+        console.log(`[UPLOAD] XHR Progress: ${pct}% (${loadedMB}MB / ${totalMB}MB)`);
+        onProgress(pct);
       }
     };
 
     xhr.onload = () => {
+      console.log(`[UPLOAD] Response: HTTP ${xhr.status} ${xhr.statusText}`);
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve();
       } else {
         let msg = `Upload failed (HTTP ${xhr.status})`;
+        console.error('[UPLOAD] Error response body:', xhr.responseText);
         try {
           const resp = JSON.parse(xhr.responseText) as { message?: string; error?: string };
           if (resp.message || resp.error) {
-            msg = resp.message ?? resp.error ?? msg;
+            const detail = resp.message ?? resp.error ?? '';
+            if (detail.toLowerCase().includes('bucket not found')) {
+              msg = `Storage bucket '${bucket}' not found in Supabase. Create it in the Supabase Dashboard under Storage.`;
+            } else if (detail.toLowerCase().includes('not authorized') || detail.toLowerCase().includes('policy')) {
+              msg = `Upload permission denied by Supabase storage policy. Check RLS policies on the '${bucket}' bucket.`;
+            } else {
+              msg = detail;
+            }
           } else {
-            console.warn('Unexpected storage error shape:', xhr.responseText);
+            console.warn('[UPLOAD] Unexpected storage error shape:', xhr.responseText);
           }
         } catch { /* responseText is not JSON — keep generic message */ }
         reject(new Error(msg));
       }
     };
-    xhr.onerror = () => reject(new Error('Network error during upload. Check your connection.'));
-    xhr.onabort = () => reject(new Error('Upload was cancelled.'));
+    xhr.onerror = () => {
+      console.error('[UPLOAD] XHR network error — check CORS, Supabase URL, and internet connection');
+      reject(new Error('Network error - check your connection and Supabase configuration.'));
+    };
+    xhr.onabort = () => {
+      console.warn('[UPLOAD] Upload was cancelled');
+      reject(new Error('Upload was cancelled.'));
+    };
+    xhr.ontimeout = () => {
+      console.error('[UPLOAD] Upload timed out after 5 minutes');
+      reject(new Error('Upload timed out. Check your connection and try with a smaller file first.'));
+    };
 
     xhr.send(file);
   });
@@ -95,7 +132,6 @@ function UploadTrackCard() {
   const [genre, setGenre] = useState(GENRES[0]);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
-  const [progress, setProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,7 +159,6 @@ function UploadTrackCard() {
 
     setUploading(true);
     setError(null);
-    setProgress(5);
 
     try {
       // Verify session is active before uploading
@@ -136,30 +171,20 @@ function UploadTrackCard() {
       const artistName = profile?.username || user.email?.split('@')[0] || 'Unknown Artist';
       const audioPath = `${user.id}/${Date.now()}_${audioFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
-      try {
-        // Upload audio with real byte-level progress (10 % → 50 %)
-        await uploadWithProgress(
-          TRACKS_BUCKET,
-          audioPath,
-          audioFile,
-          session.access_token,
-          (pct) => setProgress(10 + Math.round(pct * 0.4))
-        );
-      } catch (audioErr: unknown) {
-        const msg = audioErr instanceof Error ? audioErr.message.toLowerCase() : '';
-        if (msg.includes('bucket not found') || msg.includes('bucket')) {
-          throw new Error('Storage bucket "tracks" not found. Please create it in your Supabase dashboard under Storage → New Bucket (name it "tracks", make it Public).');
-        }
-        if (msg.includes('policy') || msg.includes('not authorized') || msg.includes('permission')) {
-          throw new Error('Upload permission denied. Check that your Supabase storage RLS policies allow authenticated uploads to the "tracks" bucket.');
-        }
-        throw audioErr;
-      }
-      setProgress(50);
+      console.log(`[UPLOAD] Uploading audio track: ${audioFile.name} (${(audioFile.size / 1024 / 1024).toFixed(2)} MB)`);
+      await uploadWithProgress(
+        TRACKS_BUCKET,
+        audioPath,
+        audioFile,
+        session.access_token,
+        () => {} // progress events logged inside uploadWithProgress
+      );
 
+      console.log('[UPLOAD] Getting public URL...');
       const { data: audioUrl } = supabase.storage
         .from(TRACKS_BUCKET)
         .getPublicUrl(audioPath);
+      console.log(`[UPLOAD] Audio URL: ${audioUrl.publicUrl}`);
 
       let coverUrlStr: string | null = null;
 
@@ -169,27 +194,23 @@ function UploadTrackCard() {
             ? `covers/${user.id}/${Date.now()}_${coverFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
             : `${user.id}/${Date.now()}_${coverFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
-        try {
-          // Upload cover art with real progress (50 % → 75 %)
-          await uploadWithProgress(
-            COVER_BUCKET,
-            coverPath,
-            coverFile,
-            session.access_token,
-            (pct) => setProgress(50 + Math.round(pct * 0.25))
-          );
-        } catch (coverErr: unknown) {
-          throw new Error(coverErr instanceof Error ? coverErr.message : 'Cover upload failed');
-        }
+        console.log(`[UPLOAD] Uploading cover art: ${coverFile.name}`);
+        await uploadWithProgress(
+          COVER_BUCKET,
+          coverPath,
+          coverFile,
+          session.access_token,
+          () => {}
+        );
 
         const { data: coverUrlData } = supabase.storage
           .from(COVER_BUCKET)
           .getPublicUrl(coverPath);
         coverUrlStr = coverUrlData.publicUrl;
+        console.log(`[UPLOAD] Cover URL: ${coverUrlStr}`);
       }
 
-      setProgress(78);
-
+      console.log('[DB] Inserting track record with audio_url...');
       const { error: dbErr } = await supabase.from('tracks').insert({
         user_id: user.id,
         title: title.trim(),
@@ -202,6 +223,7 @@ function UploadTrackCard() {
       });
 
       if (dbErr) {
+        console.error('[DB] Insert error:', dbErr);
         const dbMsg = dbErr.message.toLowerCase();
         if (dbMsg.includes('policy') || dbMsg.includes('permission') || dbErr.code === '42501') {
           throw new Error('Database permission denied. Make sure the "tracks" table has an RLS INSERT policy for authenticated users.');
@@ -212,19 +234,23 @@ function UploadTrackCard() {
         throw dbErr;
       }
 
+      console.log('[DB] Track inserted successfully');
+
       // Mark has_uploaded on profile
       await supabase
         .from('profiles')
         .update({ has_uploaded: true })
         .eq('id', user.id);
 
-      setProgress(100);
+      console.log('[SUCCESS] Upload complete');
       setSuccess(true);
       setTitle('');
       setAudioFile(null);
       setCoverFile(null);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Upload failed. Check your Supabase storage and database configuration.');
+      const msg = err instanceof Error ? err.message : 'Upload failed. Check your Supabase storage and database configuration.';
+      console.error('[UPLOAD] Upload failed:', msg);
+      setError(msg);
     } finally {
       setUploading(false);
     }
@@ -377,27 +403,7 @@ function UploadTrackCard() {
           </div>
         </label>
 
-        {/* Progress bar */}
-        {uploading && (
-          <div
-            style={{
-              backgroundColor: '#111111',
-              borderRadius: 100,
-              height: 6,
-              overflow: 'hidden',
-            }}
-          >
-            <motion.div
-              animate={{ width: `${progress}%` }}
-              transition={{ duration: 0.4 }}
-              style={{
-                height: '100%',
-                background: 'linear-gradient(90deg, #F59E0B, #F59E0B)',
-                borderRadius: 100,
-              }}
-            />
-          </div>
-        )}
+        {/* Progress bar removed — upload runs in background with "Uploading…" indicator */}
 
         <motion.button
           whileTap={{ scale: 0.97 }}
@@ -415,7 +421,7 @@ function UploadTrackCard() {
             opacity: uploading ? 0.7 : 1,
           }}
         >
-          {uploading ? `Uploading… ${progress}%` : 'Upload Track'}
+          {uploading ? 'Uploading…' : 'Upload Track'}
         </motion.button>
       </div>
     </div>

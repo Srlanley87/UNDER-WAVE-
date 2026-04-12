@@ -4,6 +4,15 @@ import { useAuthStore } from '@/store/authStore';
 import type { User } from '@supabase/supabase-js';
 import type { Profile } from '@/lib/database.types';
 
+/** Clears all persisted auth state — used when a stale/invalid session is detected. */
+function clearPersistedAuth() {
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('auth-storage');
+    }
+  } catch { /* ignore storage errors */ }
+}
+
 export function useAuth() {
   const { setSession, setProfile, setIsAuthLoading, signOut } = useAuthStore();
   // Prevent duplicate profile fetches (getSession + INITIAL_SESSION both fire on load)
@@ -11,12 +20,27 @@ export function useAuth() {
 
   useEffect(() => {
     let initialLoadDone = false;
+    // Safety timeout: if loading hasn't resolved within 8 seconds, force-clear
+    // loading state so the UI never shows an infinite spinner.
+    const loadingTimeout = setTimeout(() => {
+      if (!initialLoadDone) {
+        console.warn('[AUTH] Session load timed out — clearing stale auth state');
+        initialLoadDone = true;
+        clearPersistedAuth();
+        signOut();
+        setIsAuthLoading(false);
+      }
+    }, 8000);
 
     // Get initial session — resolve loading state once done.
     // Guard: if INITIAL_SESSION already handled this (fired before getSession()
     // resolved), skip the full flow to avoid prematurely calling
     // setIsAuthLoading(false) while fetchProfile is still in progress.
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session }, error: sessionError }) => {
+      if (sessionError) {
+        console.error('[AUTH] getSession error:', sessionError);
+      }
+
       if (initialLoadDone) {
         // INITIAL_SESSION event already processed and started fetchProfile.
         // Just sync the session value in case it differs, then return — the
@@ -25,6 +49,21 @@ export function useAuth() {
         return;
       }
       initialLoadDone = true;
+      clearTimeout(loadingTimeout);
+
+      // If the stored session's access token is expired, attempt a refresh.
+      // getSession() auto-refreshes via the refresh token when possible.
+      if (!session && sessionError == null) {
+        // No valid session — clear any stale persisted state so we don't end up
+        // with an orphaned user in the Zustand store.
+        const storedUser = useAuthStore.getState().user;
+        if (storedUser) {
+          console.log('[AUTH] Stored user found but no valid session — clearing stale auth state');
+          clearPersistedAuth();
+          signOut();
+        }
+      }
+
       setSession(session);
       if (session?.user) {
         await fetchProfile(session.user);
@@ -43,14 +82,33 @@ export function useAuth() {
         if (!initialLoadDone) {
           // getSession() hasn't resolved yet — handle here and let getSession() no-op
           initialLoadDone = true;
+          clearTimeout(loadingTimeout);
           setSession(session);
           if (session?.user) {
             await fetchProfile(session.user);
+          } else {
+            // No session — clear any stale persisted data
+            const storedUser = useAuthStore.getState().user;
+            if (storedUser) {
+              console.log('[AUTH] INITIAL_SESSION: no session, clearing stale auth state');
+              clearPersistedAuth();
+              signOut();
+            }
           }
           setIsAuthLoading(false);
         }
         return;
       }
+
+      if (event === 'TOKEN_REFRESHED') {
+        console.log('[AUTH] Token refreshed successfully');
+      }
+
+      if (event === 'SIGNED_OUT') {
+        // Ensure persisted state is also cleared on sign-out
+        clearPersistedAuth();
+      }
+
       setSession(session);
       if (session?.user) {
         await fetchProfile(session.user);
@@ -60,7 +118,10 @@ export function useAuth() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(loadingTimeout);
+      subscription.unsubscribe();
+    };
   // The effect only runs once on mount.  Zustand setter functions (setSession,
   // setProfile, setIsAuthLoading, signOut) are stable references that never
   // change, so omitting them from deps is safe and intentional.
