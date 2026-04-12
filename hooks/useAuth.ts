@@ -12,8 +12,18 @@ export function useAuth() {
   useEffect(() => {
     let initialLoadDone = false;
 
-    // Get initial session - resolve loading state once done
+    // Get initial session — resolve loading state once done.
+    // Guard: if INITIAL_SESSION already handled this (fired before getSession()
+    // resolved), skip the full flow to avoid prematurely calling
+    // setIsAuthLoading(false) while fetchProfile is still in progress.
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (initialLoadDone) {
+        // INITIAL_SESSION event already processed and started fetchProfile.
+        // Just sync the session value in case it differs, then return — the
+        // INITIAL_SESSION handler will call setIsAuthLoading(false) when done.
+        setSession(session);
+        return;
+      }
       initialLoadDone = true;
       setSession(session);
       if (session?.user) {
@@ -26,7 +36,9 @@ export function useAuth() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      // INITIAL_SESSION is already handled by getSession() above; skip to avoid duplicate fetch
+      // INITIAL_SESSION fires when the persisted session is restored from storage.
+      // If getSession() hasn't resolved yet we handle everything here; otherwise
+      // getSession() already took care of it and we skip to avoid duplicates.
       if (event === 'INITIAL_SESSION') {
         if (!initialLoadDone) {
           // getSession() hasn't resolved yet — handle here and let getSession() no-op

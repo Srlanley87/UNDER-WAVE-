@@ -47,7 +47,7 @@ If you are experiencing any of the following issues, follow this checklist to co
 
 - ❌ Black screen after Google sign-in (OAuth callback)
 - ❌ Confirmation email never arrives after sign-up
-- ❌ Music upload stuck at 10%
+- ❌ Music upload stuck at 5% (or 10%)
 - ❌ Profile page shows "Not signed in" even after logging in
 
 ---
@@ -107,7 +107,9 @@ Go to **Authentication** → **Providers** → **Email** → Turn **OFF** "Confi
 
 ### 3. Storage Buckets & Policies
 
-#### Create the `tracks` bucket
+The app uses **two separate buckets**. You must create both.
+
+#### Create the `tracks` bucket (audio files)
 
 1. Go to **Storage** in the left menu
 2. Click **New Bucket**
@@ -115,38 +117,68 @@ Go to **Authentication** → **Providers** → **Email** → Turn **OFF** "Confi
 4. Toggle **"Public bucket"** → **ON**
 5. Click **Save**
 
+#### Create the `covers` bucket (cover art images)
+
+1. Click **New Bucket** again
+2. Name: `covers`
+3. Toggle **"Public bucket"** → **ON**
+4. Click **Save**
+
 #### Apply Storage RLS Policies
 
 Go to **SQL Editor** → **New Query**, paste the following, and click **Run**:
 
 ```sql
--- Allow anyone to read/stream audio and cover art
+-- Drop any old conflicting policies before creating fresh ones
+DROP POLICY IF EXISTS "Anyone can read tracks storage"         ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated users can upload tracks"  ON storage.objects;
+DROP POLICY IF EXISTS "Users can update their own track files" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete their own track files" ON storage.objects;
+
+-- ── tracks bucket (audio) ────────────────────────────────────────────────────
 CREATE POLICY "Anyone can read tracks storage"
 ON storage.objects FOR SELECT
 USING ( bucket_id = 'tracks' );
 
--- Allow signed-in users to upload
 CREATE POLICY "Authenticated users can upload tracks"
 ON storage.objects FOR INSERT
 TO authenticated
 WITH CHECK ( bucket_id = 'tracks' );
 
--- Allow users to replace their own files
 CREATE POLICY "Users can update their own track files"
 ON storage.objects FOR UPDATE
 TO authenticated
-USING ( bucket_id = 'tracks' AND auth.uid() = owner );
+USING ( bucket_id = 'tracks' AND auth.uid()::text = (storage.foldername(name))[1] );
 
--- Allow users to delete their own files
 CREATE POLICY "Users can delete their own track files"
 ON storage.objects FOR DELETE
 TO authenticated
-USING ( bucket_id = 'tracks' AND auth.uid() = owner );
+USING ( bucket_id = 'tracks' AND auth.uid()::text = (storage.foldername(name))[1] );
+
+-- ── covers bucket (cover art) ────────────────────────────────────────────────
+CREATE POLICY "Anyone can read covers storage"
+ON storage.objects FOR SELECT
+USING ( bucket_id = 'covers' );
+
+CREATE POLICY "Authenticated users can upload covers"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK ( bucket_id = 'covers' );
+
+CREATE POLICY "Users can update their own cover files"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING ( bucket_id = 'covers' AND auth.uid()::text = (storage.foldername(name))[1] );
+
+CREATE POLICY "Users can delete their own cover files"
+ON storage.objects FOR DELETE
+TO authenticated
+USING ( bucket_id = 'covers' AND auth.uid()::text = (storage.foldername(name))[1] );
 ```
 
-> ℹ️ If you store cover images separately, repeat the above for a bucket named `images`.
+> ⚠️ The app code uploads audio to the `tracks` bucket and cover art to the `covers` bucket. Using any other name (e.g. `audio` or `images`) will cause uploads to stall.
 
-**To verify:** Try uploading a small MP3 from the Upload tab. If it still fails, check **Storage** → **Policies** to confirm the policies are listed.
+**To verify:** Try uploading a small MP3 and cover image from the Studio tab. If it still fails, check **Storage** → **Policies** to confirm all 8 policies are listed.
 
 ---
 
@@ -284,8 +316,8 @@ After completing all steps above, run through this check:
 - [ ] **Redirect URL** `https://your-app.vercel.app/auth/callback` is added
 - [ ] **Google OAuth** Callback URL is registered in Google Cloud Console
 - [ ] **SMTP** is configured and test email arrives within 1 minute
-- [ ] **Storage** bucket `tracks` exists and is **Public**
-- [ ] **Storage RLS policies** are applied (4 policies on `storage.objects`)
+- [ ] **Storage** buckets `tracks` and `covers` both exist and are **Public**
+- [ ] **Storage RLS policies** are applied (8 policies on `storage.objects` — 4 for `tracks`, 4 for `covers`)
 - [ ] **Database RLS policies** are applied to all tables
 - [ ] **Auto-profile trigger** `on_auth_user_created` exists (check **Database** → **Triggers**)
 - [ ] **Environment variable** `EXPO_PUBLIC_SITE_URL` is set in Vercel to your deployment URL

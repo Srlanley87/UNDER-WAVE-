@@ -10,7 +10,9 @@ import { Ionicons } from '@expo/vector-icons';
 
 const GENRES = ['Hip-Hop', 'Electronic', 'Lo-Fi', 'Indie', 'R&B', 'Afrobeats'];
 const TRACKS_BUCKET = 'tracks';
-const COVER_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_COVER_BUCKET || TRACKS_BUCKET;
+// Cover art lives in a dedicated "covers" bucket.  Set EXPO_PUBLIC_SUPABASE_COVER_BUCKET
+// to override (e.g. if you renamed the bucket), otherwise the default is "covers".
+const COVER_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_COVER_BUCKET || 'covers';
 
 /**
  * Upload a file to Supabase Storage via XMLHttpRequest so we get real
@@ -39,6 +41,11 @@ async function uploadWithProgress(
     const xhr = new XMLHttpRequest();
     // Supabase Storage REST endpoint for object upload
     xhr.open('POST', `${supabaseUrl}/storage/v1/object/${bucket}/${path}`);
+    // Supabase's API gateway (Kong) requires the apikey header on every request,
+    // even when using a Bearer JWT.  Without it the gateway returns 403 and the
+    // upload stalls at 0 % / 5 %.
+    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+    xhr.setRequestHeader('apikey', anonKey);
     xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
     // Supabase Storage REST API accepts a raw binary body; the Content-Type header
     // must be the file's MIME type (not multipart/form-data).
