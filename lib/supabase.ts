@@ -6,13 +6,30 @@ import type { Database } from '@/lib/database.types';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
-const isClientSideWeb = Platform.OS === 'web' && typeof window !== 'undefined';
+
+// Explicit localStorage adapter for web so sessions survive hard page refreshes.
+// Leaving `storage` as undefined can cause some environments (SSR, edge runtimes)
+// to fall back to in-memory storage, which loses the session on every reload.
+const webStorage =
+  typeof window !== 'undefined' && typeof localStorage !== 'undefined'
+    ? {
+        getItem: (key: string) => Promise.resolve(localStorage.getItem(key)),
+        setItem: (key: string, value: string) => {
+          localStorage.setItem(key, value);
+          return Promise.resolve(undefined);
+        },
+        removeItem: (key: string) => {
+          localStorage.removeItem(key);
+          return Promise.resolve(undefined);
+        },
+      }
+    : undefined; // SSR / non-browser: no persistence needed
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: Platform.OS === 'web' ? undefined : AsyncStorage,
+    storage: Platform.OS === 'web' ? webStorage : AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: isClientSideWeb,
+    detectSessionInUrl: Platform.OS === 'web' && typeof window !== 'undefined',
   },
 });
