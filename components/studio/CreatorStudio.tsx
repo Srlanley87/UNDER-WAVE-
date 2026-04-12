@@ -9,6 +9,8 @@ import GlassCard from '@/components/ui/GlassCard';
 import { Ionicons } from '@expo/vector-icons';
 
 const GENRES = ['Hip-Hop', 'Electronic', 'Lo-Fi', 'Indie', 'R&B', 'Afrobeats'];
+const TRACKS_BUCKET = 'tracks';
+const COVER_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_COVER_BUCKET || TRACKS_BUCKET;
 
 function UploadTrackCard() {
   const user = useAuthStore((s) => s.user);
@@ -34,30 +36,33 @@ function UploadTrackCard() {
     try {
       const audioPath = `${user.id}/${Date.now()}_${audioFile.name}`;
       const { error: audioErr } = await supabase.storage
-        .from('tracks')
+        .from(TRACKS_BUCKET)
         .upload(audioPath, audioFile);
 
       if (audioErr) throw audioErr;
       setProgress(50);
 
       const { data: audioUrl } = supabase.storage
-        .from('tracks')
+        .from(TRACKS_BUCKET)
         .getPublicUrl(audioPath);
 
       let coverUrlStr: string | null = null;
 
       if (coverFile) {
-        const coverPath = `${user.id}/${Date.now()}_${coverFile.name}`;
+        const coverPath =
+          COVER_BUCKET === TRACKS_BUCKET
+            ? `covers/${user.id}/${Date.now()}_${coverFile.name}`
+            : `${user.id}/${Date.now()}_${coverFile.name}`;
         const { error: coverErr } = await supabase.storage
-          .from('covers')
+          .from(COVER_BUCKET)
           .upload(coverPath, coverFile);
 
-        if (!coverErr) {
-          const { data: coverUrlData } = supabase.storage
-            .from('covers')
-            .getPublicUrl(coverPath);
-          coverUrlStr = coverUrlData.publicUrl;
-        }
+        if (coverErr) throw coverErr;
+
+        const { data: coverUrlData } = supabase.storage
+          .from(COVER_BUCKET)
+          .getPublicUrl(coverPath);
+        coverUrlStr = coverUrlData.publicUrl;
       }
 
       setProgress(80);
