@@ -43,10 +43,15 @@ function WebAuthModal() {
         setSession(data.session);
         setVisible(false);
       } else {
+        const origin = typeof window !== 'undefined' ? window.location.origin : '';
+        const siteUrl = (process.env.EXPO_PUBLIC_SITE_URL || origin).replace(/\/$/, '');
         const { data, error: err } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { username } },
+          options: {
+            data: { username },
+            emailRedirectTo: `${siteUrl}/auth/callback`,
+          },
         });
         if (err) { setError(err.message); return; }
         if (data.user && !data.session) {

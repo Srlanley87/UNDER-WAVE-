@@ -14,20 +14,7 @@ export default function AuthCallback() {
       return;
     }
 
-    // With detectSessionInUrl: true, Supabase automatically processes the code
-    // from the URL. We just need to wait for the auth state to change.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        router.replace('/discovery');
-      }
-      if (event === 'SIGNED_OUT') {
-        router.replace('/discovery');
-      }
-    });
-
-    // Also attempt explicit code exchange for robustness
     const url = typeof window !== 'undefined' ? window.location.href : '';
-    const hasCode = url.includes('code=');
     const hasError = url.includes('error=');
 
     if (hasError) {
@@ -36,21 +23,40 @@ export default function AuthCallback() {
       setErrorMsg(decodeURIComponent(desc));
       setStatus('error');
       setTimeout(() => router.replace('/discovery'), 3000);
-      subscription.unsubscribe();
       return;
     }
 
-    if (!hasCode) {
-      // No code in URL – just redirect home
-      router.replace('/discovery');
-      subscription.unsubscribe();
-      return;
-    }
-
-    // Safety fallback: if SIGNED_IN event doesn't fire within 8 seconds, redirect anyway
+    // Safety fallback: redirect after 5 seconds regardless
     const timeout = setTimeout(() => {
       router.replace('/discovery');
-    }, 8000);
+    }, 5000);
+
+    // Subscribe FIRST so we don't miss the SIGNED_IN event.
+    // Supabase also fires INITIAL_SESSION immediately on subscribe with the
+    // current session – this handles the race condition where Supabase already
+    // exchanged the PKCE code (via detectSessionInUrl) before this component
+    // mounted, so SIGNED_IN was never observed.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (
+        (event === 'SIGNED_IN' ||
+          event === 'TOKEN_REFRESHED' ||
+          event === 'INITIAL_SESSION') &&
+        session
+      ) {
+        clearTimeout(timeout);
+        router.replace('/discovery');
+      }
+    });
+
+    // Belt-and-suspenders: check whether the session already exists right now
+    // (covers the case where detectSessionInUrl finished before the subscriber
+    // above was registered and INITIAL_SESSION fired without a session).
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        clearTimeout(timeout);
+        router.replace('/discovery');
+      }
+    });
 
     return () => {
       subscription.unsubscribe();
