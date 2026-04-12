@@ -14,7 +14,7 @@ export function usePlayer() {
         }
       });
     } else {
-      store.setDominantColor('#A855F7');
+      store.setDominantColor('#F59E0B');
     }
     // getColor and setDominantColor are stable references — intentionally omitted
     // eslint-disable-next-line react-hooks/exhaustive-deps

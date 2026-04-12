@@ -117,7 +117,7 @@ export default function FollowingFeed() {
           padding: 32,
         }}
       >
-        <Ionicons name="people-outline" size={64} color="#A855F7" />
+        <Ionicons name="people-outline" size={64} color="#F59E0B" />
         <Text
           style={{
             color: '#ffffff',
@@ -161,15 +161,15 @@ export default function FollowingFeed() {
             width: 120,
             height: 120,
             borderRadius: 60,
-            backgroundColor: 'rgba(168,85,247,0.1)',
+            backgroundColor: 'rgba(245,158,11,0.1)',
             alignItems: 'center',
             justifyContent: 'center',
             marginBottom: 20,
             borderWidth: 2,
-            borderColor: 'rgba(168,85,247,0.2)',
+            borderColor: 'rgba(245,158,11,0.2)',
           }}
         >
-          <Ionicons name="musical-notes-outline" size={56} color="#A855F7" />
+          <Ionicons name="musical-notes-outline" size={56} color="#F59E0B" />
         </View>
         <Text
           style={{
@@ -208,8 +208,8 @@ export default function FollowingFeed() {
         <RefreshControl
           refreshing={refreshing}
           onRefresh={handleRefresh}
-          tintColor="#A855F7"
-          colors={['#A855F7']}
+          tintColor="#F59E0B"
+          colors={['#F59E0B']}
         />
       }
       ListHeaderComponent={
@@ -249,7 +249,7 @@ export default function FollowingFeed() {
                 height: 40,
                 borderRadius: 20,
                 borderWidth: 2,
-                borderColor: '#A855F7',
+                borderColor: '#F59E0B',
               }}
             />
           ) : (
@@ -262,10 +262,10 @@ export default function FollowingFeed() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 borderWidth: 2,
-                borderColor: '#A855F7',
+                borderColor: '#F59E0B',
               }}
             >
-              <Text style={{ color: '#A855F7', fontWeight: '700', fontSize: 16 }}>
+              <Text style={{ color: '#F59E0B', fontWeight: '700', fontSize: 16 }}>
                 {item.username.slice(0, 1).toUpperCase()}
               </Text>
             </View>
@@ -289,7 +289,7 @@ export default function FollowingFeed() {
               {item.track.title}
             </Text>
             {item.track.genre && (
-              <Text style={{ color: '#A855F7', fontSize: 11, marginTop: 2 }}>
+              <Text style={{ color: '#F59E0B', fontSize: 11, marginTop: 2 }}>
                 {item.track.genre}
               </Text>
             )}
@@ -312,7 +312,7 @@ export default function FollowingFeed() {
                 justifyContent: 'center',
               }}
             >
-              <Ionicons name="musical-notes" size={22} color="#A855F7" />
+              <Ionicons name="musical-notes" size={22} color="#F59E0B" />
             </View>
           )}
 
@@ -322,7 +322,7 @@ export default function FollowingFeed() {
               setTrack(item.track);
             }}
             style={{
-              backgroundColor: '#A855F7',
+              backgroundColor: '#F59E0B',
               width: 36,
               height: 36,
               borderRadius: 18,

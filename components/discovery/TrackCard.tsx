@@ -53,7 +53,7 @@ function WebTrackCard({ track }: TrackCardProps) {
               justifyContent: 'center',
             }}
           >
-            <span style={{ color: '#A855F7', fontSize: 40 }}>♫</span>
+            <span style={{ color: '#F59E0B', fontSize: 40 }}>♫</span>
           </div>
         )}
 
@@ -77,7 +77,7 @@ function WebTrackCard({ track }: TrackCardProps) {
               setTrack(track);
             }}
             style={{
-              background: '#A855F7',
+              background: '#F59E0B',
               border: 'none',
               borderRadius: '50%',
               width: 48,
@@ -86,9 +86,9 @@ function WebTrackCard({ track }: TrackCardProps) {
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              color: '#fff',
+              color: '#000',
               fontSize: 20,
-              boxShadow: '0 4px 20px rgba(168,85,247,0.5)',
+              boxShadow: '0 4px 20px rgba(245,158,11,0.5)',
             }}
           >
             ▶
@@ -168,11 +168,11 @@ function WebTrackCard({ track }: TrackCardProps) {
             style={{
               marginLeft: 'auto',
               fontSize: 10,
-              color: '#A855F7',
-              backgroundColor: 'rgba(168,85,247,0.12)',
+              color: '#F59E0B',
+              backgroundColor: 'rgba(245,158,11,0.12)',
               padding: '2px 8px',
               borderRadius: 100,
-              border: '1px solid rgba(168,85,247,0.2)',
+              border: '1px solid rgba(245,158,11,0.2)',
             }}
           >
             {track.genre}
@@ -216,7 +216,7 @@ function NativeTrackCard({ track }: TrackCardProps) {
               justifyContent: 'center',
             }}
           >
-            <Ionicons name="musical-notes" size={36} color="#A855F7" />
+            <Ionicons name="musical-notes" size={36} color="#F59E0B" />
           </View>
         )}
 

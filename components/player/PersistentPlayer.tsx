@@ -82,7 +82,7 @@ function WebPersistentPlayer() {
               justifyContent: 'center',
             }}
           >
-            <span style={{ color: '#A855F7', fontSize: 20 }}>♫</span>
+            <span style={{ color: '#F59E0B', fontSize: 20 }}>♫</span>
           </div>
         )}
       </div>
@@ -141,7 +141,7 @@ function WebPersistentPlayer() {
             width: 40,
             height: 40,
             borderRadius: 20,
-            backgroundColor: '#A855F7',
+            backgroundColor: '#F59E0B',
             fontSize: 18,
           }}
         >
@@ -167,7 +167,7 @@ function WebPersistentPlayer() {
           }
           style={{
             ...controlButtonStyle,
-            color: repeat !== 'none' ? '#A855F7' : 'rgba(255,255,255,0.5)',
+            color: repeat !== 'none' ? '#F59E0B' : 'rgba(255,255,255,0.5)',
           }}
         >
           {repeat === 'one' ? '🔂' : '🔁'}
@@ -265,7 +265,7 @@ function NativePersistentPlayer() {
             justifyContent: 'center',
           }}
         >
-          <Ionicons name="musical-note" size={20} color="#A855F7" />
+          <Ionicons name="musical-note" size={20} color="#F59E0B" />
         </View>
       )}
 
@@ -288,7 +288,7 @@ function NativePersistentPlayer() {
         <TouchableOpacity
           onPress={togglePlay}
           style={{
-            backgroundColor: '#A855F7',
+            backgroundColor: '#F59E0B',
             width: 36,
             height: 36,
             borderRadius: 18,

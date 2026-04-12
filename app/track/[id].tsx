@@ -73,7 +73,7 @@ export default function TrackPage() {
           justifyContent: 'center',
         }}
       >
-        <Text style={{ color: '#A855F7', fontSize: 16 }}>Loading…</Text>
+        <Text style={{ color: '#F59E0B', fontSize: 16 }}>Loading…</Text>
       </View>
     );
   }
@@ -131,7 +131,7 @@ export default function TrackPage() {
               justifyContent: 'center',
             }}
           >
-            <Ionicons name="musical-notes" size={80} color="#A855F7" />
+            <Ionicons name="musical-notes" size={80} color="#F59E0B" />
           </View>
         )}
 
@@ -161,7 +161,7 @@ export default function TrackPage() {
             <Ionicons
               name={liked ? 'heart' : 'heart-outline'}
               size={28}
-              color={liked ? '#EC4899' : 'rgba(255,255,255,0.6)'}
+              color={liked ? '#F59E0B' : 'rgba(255,255,255,0.6)'}
             />
           </TouchableOpacity>
         </View>
@@ -171,16 +171,16 @@ export default function TrackPage() {
           <View
             style={{
               alignSelf: 'flex-start',
-              backgroundColor: 'rgba(168,85,247,0.15)',
+              backgroundColor: 'rgba(245,158,11,0.15)',
               borderRadius: 20,
               paddingHorizontal: 12,
               paddingVertical: 4,
               marginTop: 12,
               borderWidth: 1,
-              borderColor: 'rgba(168,85,247,0.3)',
+              borderColor: 'rgba(245,158,11,0.3)',
             }}
           >
-            <Text style={{ color: '#A855F7', fontSize: 12, fontWeight: '600' }}>
+            <Text style={{ color: '#F59E0B', fontSize: 12, fontWeight: '600' }}>
               {track.genre}
             </Text>
           </View>
