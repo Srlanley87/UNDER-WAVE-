@@ -1,11 +1,11 @@
-import { View, Text, ScrollView, Image, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import AnimatedButton from '@/components/ui/AnimatedButton';
 
 export default function Profile() {
-  const { user, profile, signOut } = useAuthStore();
+  const { user, profile, isAuthLoading, signOut } = useAuthStore();
 
   async function handleSignOut() {
     try {
@@ -14,6 +14,42 @@ export default function Profile() {
     } catch (err) {
       console.error('Sign out error:', err);
     }
+  }
+
+  // Still determining auth state
+  if (isAuthLoading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: '#000000',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <ActivityIndicator size="large" color="#F59E0B" />
+      </View>
+    );
+  }
+
+  // Authenticated but profile not yet loaded (being fetched / created)
+  if (user && !profile) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: '#000000',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 12,
+        }}
+      >
+        <ActivityIndicator size="large" color="#F59E0B" />
+        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>
+          Loading profile…
+        </Text>
+      </View>
+    );
   }
 
   if (!user || !profile) {
