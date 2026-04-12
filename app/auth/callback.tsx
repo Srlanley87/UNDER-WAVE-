@@ -27,66 +27,63 @@ export default function AuthCallback() {
         setErrorMsg('Authentication failed');
       }
       setStatus('error');
-      setTimeout(() => router.replace('/'), 3000);
+      setTimeout(() => router.replace('/discovery'), 3000);
       return;
     }
 
-    // Listen for auth state changes first (before async work)
+    // Safety fallback: redirect regardless
+    const timeout = setTimeout(() => {
+      router.replace('/discovery');
+    }, 8000);
+
+    // Subscribe first so we don't miss early auth events.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
-        subscription.unsubscribe();
+      if (
+        (event === 'SIGNED_IN' ||
+          event === 'TOKEN_REFRESHED' ||
+          event === 'INITIAL_SESSION') &&
+        session
+      ) {
+        clearTimeout(timeout);
         router.replace('/discovery');
       }
     });
 
     async function handleCallback() {
-      // 1. Check if Supabase already auto-exchanged the code (detectSessionInUrl: true)
-      const { data: { session: existingSession } } = await supabase.auth.getSession();
-      if (existingSession) {
-        subscription.unsubscribe();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        clearTimeout(timeout);
         router.replace('/discovery');
         return;
       }
 
-      // 2. If code is present, explicitly exchange it (handles race conditions)
-      if (hasCode) {
-        try {
-          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(url);
-          if (exchangeError) {
-            console.error('Code exchange error:', exchangeError.message);
-            // Still check for a session – the exchange might have partially succeeded
-            const { data: { session: retrySession } } = await supabase.auth.getSession();
-            if (retrySession) {
-              subscription.unsubscribe();
-              router.replace('/discovery');
-              return;
-            }
-            setErrorMsg(exchangeError.message);
-            setStatus('error');
-            setTimeout(() => router.replace('/'), 3000);
-            return;
-          }
-          // Success – the onAuthStateChange listener will fire and redirect
-        } catch (err) {
-          console.error('Unexpected callback error:', err);
-          setErrorMsg('Unexpected error during sign-in.');
-          setStatus('error');
-          setTimeout(() => router.replace('/'), 3000);
-          return;
-        }
-      } else {
-        // No code in URL – user may have navigated here directly
+      if (!hasCode) {
+        clearTimeout(timeout);
         router.replace('/discovery');
         return;
+      }
+
+      try {
+        const { error } = await supabase.auth.exchangeCodeForSession(url);
+        if (error) {
+          const { data: { session: retrySession } } = await supabase.auth.getSession();
+          if (retrySession) {
+            clearTimeout(timeout);
+            router.replace('/discovery');
+            return;
+          }
+          setErrorMsg(error.message);
+          setStatus('error');
+          setTimeout(() => router.replace('/discovery'), 3000);
+        }
+      } catch {
+        setErrorMsg('Unexpected error during sign-in.');
+        setStatus('error');
+        setTimeout(() => router.replace('/discovery'), 3000);
       }
     }
 
     handleCallback();
-
-    // Safety fallback: redirect after 10 seconds regardless
-    const timeout = setTimeout(() => {
-      router.replace('/discovery');
-    }, 10000);
 
     return () => {
       subscription.unsubscribe();

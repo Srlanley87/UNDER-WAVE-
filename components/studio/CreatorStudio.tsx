@@ -11,8 +11,6 @@ import { Ionicons } from '@expo/vector-icons';
 const GENRES = ['Hip-Hop', 'Electronic', 'Lo-Fi', 'Indie', 'R&B', 'Afrobeats'];
 const TRACKS_BUCKET = 'tracks';
 const COVER_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_COVER_BUCKET || TRACKS_BUCKET;
-const MAX_AUDIO_MB = 50;
-const MAX_COVER_MB = 5;
 
 function UploadTrackCard() {
   const user = useAuthStore((s) => s.user);
@@ -26,19 +24,24 @@ function UploadTrackCard() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
+  const MAX_COVER_BYTES = 5 * 1024 * 1024;
+
   async function handleUpload() {
-    if (!user || !audioFile || !title.trim()) {
+    if (!user) {
+      setError('You must be signed in to upload tracks.');
+      return;
+    }
+    if (!audioFile || !title.trim()) {
       setError('Please fill in all fields and select an audio file.');
       return;
     }
-
-    // File size validation
-    if (audioFile.size > MAX_AUDIO_MB * 1024 * 1024) {
-      setError(`Audio file must be smaller than ${MAX_AUDIO_MB}MB.`);
+    if (audioFile.size > MAX_AUDIO_BYTES) {
+      setError(`Audio file is too large (max 100 MB). Your file is ${(audioFile.size / 1024 / 1024).toFixed(1)} MB.`);
       return;
     }
-    if (coverFile && coverFile.size > MAX_COVER_MB * 1024 * 1024) {
-      setError(`Cover image must be smaller than ${MAX_COVER_MB}MB.`);
+    if (coverFile && coverFile.size > MAX_COVER_BYTES) {
+      setError(`Cover image is too large (max 5 MB). Your file is ${(coverFile.size / 1024 / 1024).toFixed(1)} MB.`);
       return;
     }
 
@@ -54,7 +57,7 @@ function UploadTrackCard() {
         return;
       }
 
-      const artistName = profile?.username ?? user.email?.split('@')[0] ?? 'Unknown Artist';
+      const artistName = profile?.username || user.email?.split('@')[0] || 'Unknown Artist';
       const audioPath = `${user.id}/${Date.now()}_${audioFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
       const { error: audioErr } = await supabase.storage
@@ -62,17 +65,14 @@ function UploadTrackCard() {
         .upload(audioPath, audioFile, { upsert: false });
 
       if (audioErr) {
-        if (audioErr.message.includes('Bucket not found') || audioErr.message.includes('bucket')) {
-          throw new Error(
-            `Storage bucket "${TRACKS_BUCKET}" not found. Please create a public bucket named "tracks" in Supabase Storage.`
-          );
+        const msg = audioErr.message.toLowerCase();
+        if (msg.includes('bucket not found') || msg.includes('bucket')) {
+          throw new Error('Storage bucket "tracks" not found. Please create it in your Supabase dashboard under Storage → New Bucket (name it "tracks", make it Public).');
         }
-        if (audioErr.message.includes('row-level security') || audioErr.message.includes('policy')) {
-          throw new Error(
-            'Upload blocked by storage policy. Please add an INSERT policy for authenticated users on the "tracks" bucket in Supabase Storage.'
-          );
+        if (msg.includes('policy') || msg.includes('not authorized') || msg.includes('permission')) {
+          throw new Error('Upload permission denied. Check that your Supabase storage RLS policies allow authenticated uploads to the "tracks" bucket.');
         }
-        throw new Error(audioErr.message);
+        throw audioErr;
       }
       setProgress(50);
 
@@ -113,12 +113,14 @@ function UploadTrackCard() {
       });
 
       if (dbErr) {
-        if (dbErr.message.includes('row-level security') || dbErr.message.includes('policy')) {
-          throw new Error(
-            'Database write blocked by policy. Please enable RLS INSERT policy for authenticated users on the "tracks" table.'
-          );
+        const dbMsg = dbErr.message.toLowerCase();
+        if (dbMsg.includes('policy') || dbMsg.includes('permission') || dbErr.code === '42501') {
+          throw new Error('Database permission denied. Make sure the "tracks" table has an RLS INSERT policy for authenticated users.');
         }
-        throw new Error(dbErr.message);
+        if (dbMsg.includes('violates foreign key') || dbErr.code === '23503') {
+          throw new Error('Your profile does not exist yet. Please visit the Profile tab first, then try again.');
+        }
+        throw dbErr;
       }
 
       // Mark has_uploaded on profile
@@ -133,7 +135,7 @@ function UploadTrackCard() {
       setAudioFile(null);
       setCoverFile(null);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Upload failed. Check your Supabase Storage settings.');
+      setError(err instanceof Error ? err.message : 'Upload failed. Check your Supabase storage and database configuration.');
     } finally {
       setUploading(false);
     }

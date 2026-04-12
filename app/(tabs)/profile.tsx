@@ -1,5 +1,14 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Image, TouchableOpacity, TextInput, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  Image,
+  TouchableOpacity,
+  TextInput,
+  Platform,
+  ActivityIndicator,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
@@ -10,7 +19,7 @@ const GOLD = '#F59E0B';
 
 export default function Profile() {
   const router = useRouter();
-  const { user, profile, setProfile, signOut } = useAuthStore();
+  const { user, profile, isAuthLoading, setProfile, signOut } = useAuthStore();
   const [editing, setEditing] = useState(false);
   const [editUsername, setEditUsername] = useState('');
   const [editBio, setEditBio] = useState('');
@@ -33,8 +42,6 @@ export default function Profile() {
     try {
       await supabase.auth.signOut();
       signOut();
-      // The AuthModal in _layout.tsx will appear automatically when user becomes null.
-      // On web, also redirect to root so the modal is clearly visible.
       if (Platform.OS === 'web') {
         router.replace('/');
       }
@@ -76,6 +83,40 @@ export default function Profile() {
     }
   }
 
+  if (isAuthLoading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: '#000000',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <ActivityIndicator size="large" color="#F59E0B" />
+      </View>
+    );
+  }
+
+  if (user && !profile) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: '#000000',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 12,
+        }}
+      >
+        <ActivityIndicator size="large" color="#F59E0B" />
+        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>
+          Loading profile…
+        </Text>
+      </View>
+    );
+  }
+
   if (!user || !profile) {
     return (
       <View
@@ -99,9 +140,7 @@ export default function Profile() {
         >
           Not signed in
         </Text>
-        <Text
-          style={{ color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}
-        >
+        <Text style={{ color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>
           Sign in to see your profile, upload tracks and follow artists.
         </Text>
       </View>
@@ -113,7 +152,6 @@ export default function Profile() {
       style={{ flex: 1, backgroundColor: '#000000' }}
       contentContainerStyle={{ padding: 24, paddingBottom: 120 }}
     >
-      {/* Header */}
       <View style={{ alignItems: 'center', marginBottom: 32 }}>
         {profile.avatar_url ? (
           <Image
@@ -191,8 +229,12 @@ export default function Profile() {
                 onPress={saveProfile}
                 disabled={saving}
                 style={{
-                  flex: 1, backgroundColor: GOLD, borderRadius: 12,
-                  padding: 12, alignItems: 'center', opacity: saving ? 0.7 : 1,
+                  flex: 1,
+                  backgroundColor: GOLD,
+                  borderRadius: 12,
+                  padding: 12,
+                  alignItems: 'center',
+                  opacity: saving ? 0.7 : 1,
                 }}
               >
                 <Text style={{ color: '#000000', fontWeight: '700', fontSize: 14 }}>
@@ -202,9 +244,13 @@ export default function Profile() {
               <TouchableOpacity
                 onPress={() => setEditing(false)}
                 style={{
-                  flex: 1, backgroundColor: '#1A1A1A', borderRadius: 12,
-                  padding: 12, alignItems: 'center',
-                  borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+                  flex: 1,
+                  backgroundColor: '#1A1A1A',
+                  borderRadius: 12,
+                  padding: 12,
+                  alignItems: 'center',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,255,255,0.1)',
                 }}
               >
                 <Text style={{ color: 'rgba(255,255,255,0.7)', fontWeight: '600', fontSize: 14 }}>
@@ -265,7 +311,6 @@ export default function Profile() {
         )}
       </View>
 
-      {/* Stats */}
       <View
         style={{
           flexDirection: 'row',
@@ -278,9 +323,7 @@ export default function Profile() {
         }}
       >
         <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={{ color: GOLD, fontSize: 24, fontWeight: '700' }}>
-            {trackCount}
-          </Text>
+          <Text style={{ color: GOLD, fontSize: 24, fontWeight: '700' }}>{trackCount}</Text>
           <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 4 }}>
             Tracks
           </Text>
@@ -301,7 +344,6 @@ export default function Profile() {
         </View>
       </View>
 
-      {/* Email display */}
       <View
         style={{
           backgroundColor: '#0A0A0A',
@@ -312,22 +354,25 @@ export default function Profile() {
           borderColor: 'rgba(255,255,255,0.06)',
         }}
       >
-        <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '600',
-          textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>
+        <Text
+          style={{
+            color: 'rgba(255,255,255,0.4)',
+            fontSize: 11,
+            fontWeight: '600',
+            textTransform: 'uppercase',
+            letterSpacing: 1,
+            marginBottom: 4,
+          }}
+        >
           Account Email
         </Text>
-        <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>
-          {user.email}
-        </Text>
+        <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>{user.email}</Text>
       </View>
 
-      {/* Sign out */}
       <AnimatedButton variant="secondary" onPress={handleSignOut}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Ionicons name="log-out-outline" size={18} color="rgba(255,255,255,0.8)" />
-          <Text style={{ color: 'rgba(255,255,255,0.8)', fontWeight: '600' }}>
-            Sign Out
-          </Text>
+          <Text style={{ color: 'rgba(255,255,255,0.8)', fontWeight: '600' }}>Sign Out</Text>
         </View>
       </AnimatedButton>
     </ScrollView>
