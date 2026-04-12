@@ -42,11 +42,19 @@ export default function Profile() {
     try {
       await supabase.auth.signOut();
       signOut();
-      if (Platform.OS === 'web') {
+      // Explicitly clear the persisted auth state so it doesn't survive a refresh
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        localStorage.removeItem('auth-storage');
         router.replace('/');
       }
     } catch (err) {
       console.error('Sign out error:', err);
+      // Even if signOut fails, clear local state and redirect
+      signOut();
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        localStorage.removeItem('auth-storage');
+        router.replace('/');
+      }
     }
   }
 
