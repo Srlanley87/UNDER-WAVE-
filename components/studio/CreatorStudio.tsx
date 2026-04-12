@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Platform, View, Text, ScrollView } from 'react-native';
 import { supabase, getAccessTokenNoLock } from '@/lib/supabase';
+import { withTimeout } from '@/lib/timeout';
 import { useAuthStore } from '@/store/authStore';
 import type { Track } from '@/lib/database.types';
 import ReplayHeatmap from '@/components/studio/ReplayHeatmap';
@@ -13,6 +14,11 @@ const TRACKS_BUCKET = 'tracks';
 // Cover art lives in a dedicated "covers" bucket.  Set EXPO_PUBLIC_SUPABASE_COVER_BUCKET
 // to override (e.g. if you renamed the bucket), otherwise the default is "covers".
 const COVER_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_COVER_BUCKET || 'covers';
+const AUTH_SESSION_TIMEOUT_MS = 15000;
+const STORAGE_UPLOAD_TIMEOUT_MS = 300000; // 5 minutes
+const DB_TIMEOUT_MS = 45000;
+const SESSION_ERROR_NO_ACTIVE = 'no active session';
+const SESSION_ERROR_SIGN_IN = 'sign in';
 
 /**
  * Upload a file to Supabase Storage via XMLHttpRequest so we get real
@@ -36,10 +42,14 @@ async function uploadWithProgress(
       throw new Error('Supabase credentials not configured. Set EXPO_PUBLIC_SUPABASE_ANON_KEY in your environment.');
     }
     // Fallback: supabase-js client (no progress events)
-    const { error } = await supabase.storage.from(bucket).upload(path, file, {
-      upsert: false,
-      contentType: file.type || undefined,
-    });
+    const { error } = await withTimeout(
+      supabase.storage.from(bucket).upload(path, file, {
+        upsert: false,
+        contentType: file.type || undefined,
+      }),
+      STORAGE_UPLOAD_TIMEOUT_MS,
+      'Upload timed out while sending file to storage. Check your network and Supabase project status.'
+    );
     if (error) throw error;
     return;
   }
@@ -175,9 +185,14 @@ function UploadTrackCard() {
       // IndexedDB lock and will "steal" it, causing the upload to fail.
       let accessToken: string;
       try {
-        accessToken = await getAccessTokenNoLock();
-      } catch {
-        setError('Session expired. Please sign out and sign in again.');
+        accessToken = await getAccessTokenNoLock(AUTH_SESSION_TIMEOUT_MS);
+      } catch (tokenErr: unknown) {
+        const tokenMessage = tokenErr instanceof Error ? tokenErr.message.toLowerCase() : '';
+        if (tokenMessage.includes(SESSION_ERROR_NO_ACTIVE) || tokenMessage.includes(SESSION_ERROR_SIGN_IN)) {
+          setError('Session expired. Please sign out and sign in again.');
+        } else {
+          setError('Session check timed out. Close duplicate tabs and retry the upload.');
+        }
         return;
       }
 
@@ -227,7 +242,7 @@ function UploadTrackCard() {
       // function returns.  No reference is kept, so the auth lock stays free.
 
       console.log('[DB] Inserting track record with audio_url...');
-      const { error: dbErr } = await supabase.from('tracks').insert({
+      const trackInsertPromise = supabase.from('tracks').insert({
         user_id: user.id,
         title: title.trim(),
         artist: artistName,
@@ -237,6 +252,11 @@ function UploadTrackCard() {
         play_count: 0,
         like_count: 0,
       });
+      const { error: dbErr } = await withTimeout(
+        trackInsertPromise,
+        DB_TIMEOUT_MS,
+        'Saving track metadata timed out. Your file may be uploaded, but database save did not finish.'
+      );
 
       if (dbErr) {
         console.error('[DB] Insert error:', dbErr);
@@ -253,10 +273,18 @@ function UploadTrackCard() {
       console.log('[DB] Track inserted successfully');
 
       // Mark has_uploaded on profile
-      await supabase
-        .from('profiles')
-        .update({ has_uploaded: true })
-        .eq('id', user.id);
+      try {
+        await withTimeout(
+          supabase
+            .from('profiles')
+            .update({ has_uploaded: true })
+            .eq('id', user.id),
+          DB_TIMEOUT_MS,
+          'Profile update timed out after upload.'
+        );
+      } catch (profileErr) {
+        console.warn('[DB] Profile update skipped:', profileErr);
+      }
 
       console.log('[SUCCESS] Upload complete');
       setSuccess(true);

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import type { Database } from '@/lib/database.types';
+import { withTimeout } from '@/lib/timeout';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
@@ -26,8 +27,12 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
  * background job to race for the same IndexedDB lock and produce the
  * error "Lock … was released because another request stole it".
  */
-export async function getAccessTokenNoLock(): Promise<string> {
-  const { data, error } = await supabase.auth.getSession();
+export async function getAccessTokenNoLock(timeoutMs = 15000): Promise<string> {
+  const { data, error } = await withTimeout(
+    supabase.auth.getSession(),
+    timeoutMs,
+    'Timed out while reading your auth session. Close duplicate app tabs and sign in again.'
+  );
   if (error || !data.session?.access_token) {
     throw new Error('No active session. Please sign in again.');
   }
