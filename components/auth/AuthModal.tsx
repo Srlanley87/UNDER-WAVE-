@@ -41,11 +41,14 @@ function WebAuthModal() {
         if (err) throw err;
 
         if (data.user) {
-          await supabase.from('profiles').insert({
-            id: data.user.id,
-            username,
-            has_uploaded: false,
-          });
+          await supabase.from('profiles').upsert(
+            {
+              id: data.user.id,
+              username,
+              has_uploaded: false,
+            },
+            { onConflict: 'id' }
+          );
         }
 
         setSession(data.session);
@@ -62,7 +65,7 @@ function WebAuthModal() {
     try {
       await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: window.location.origin },
+        options: { redirectTo: `${window.location.origin}/` },
       });
     } catch (err) {
       console.error('Google OAuth error:', err);
@@ -373,11 +376,14 @@ function NativeAuthModal() {
         });
         if (err) throw err;
         if (data.user) {
-          await supabase.from('profiles').insert({
-            id: data.user.id,
-            username,
-            has_uploaded: false,
-          });
+          await supabase.from('profiles').upsert(
+            {
+              id: data.user.id,
+              username,
+              has_uploaded: false,
+            },
+            { onConflict: 'id' }
+          );
         }
         setSession(data.session);
       }

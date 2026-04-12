@@ -6,7 +6,7 @@ import { useAuthStore } from '@/store/authStore';
 const TAB_BAR_HEIGHT = 64;
 
 export default function TabsLayout() {
-  const profile = useAuthStore((s) => s.profile);
+  const user = useAuthStore((s) => s.user);
 
   return (
     <Tabs
@@ -58,7 +58,7 @@ export default function TabsLayout() {
           ),
         }}
       />
-      {profile?.has_uploaded && (
+      {user && (
         <Tabs.Screen
           name="studio"
           options={{
