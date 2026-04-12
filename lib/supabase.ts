@@ -6,12 +6,13 @@ import type { Database } from '@/lib/database.types';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+const isClientSideWeb = Platform.OS === 'web' && typeof window !== 'undefined';
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: AsyncStorage,
+    storage: Platform.OS === 'web' ? undefined : AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: Platform.OS === 'web',
+    detectSessionInUrl: isClientSideWeb,
   },
 });
