@@ -49,7 +49,10 @@ function UploadTrackCard() {
       let coverUrlStr: string | null = null;
 
       if (coverFile) {
-        const coverPath = `covers/${user.id}/${Date.now()}_${coverFile.name}`;
+        const coverPath =
+          COVER_BUCKET === TRACKS_BUCKET
+            ? `covers/${user.id}/${Date.now()}_${coverFile.name}`
+            : `${user.id}/${Date.now()}_${coverFile.name}`;
         const { error: coverErr } = await supabase.storage
           .from(COVER_BUCKET)
           .upload(coverPath, coverFile);

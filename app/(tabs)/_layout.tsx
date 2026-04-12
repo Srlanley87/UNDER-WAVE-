@@ -58,17 +58,16 @@ export default function TabsLayout() {
           ),
         }}
       />
-      {user && (
-        <Tabs.Screen
-          name="studio"
-          options={{
-            title: 'Studio',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="mic-outline" size={size} color={color} />
-            ),
-          }}
-        />
-      )}
+      <Tabs.Screen
+        name="studio"
+        options={{
+          href: user ? undefined : null,
+          title: 'Studio',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="mic-outline" size={size} color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

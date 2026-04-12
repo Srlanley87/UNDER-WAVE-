@@ -62,22 +62,36 @@ export function useAuth() {
         .replace(/_+/g, '_')
         .replace(/^_+|_+$/g, '');
 
-      const fallbackUsername = `${cleaned || 'user'}_${user.id.slice(0, 6)}`.slice(0, 30);
+      const fallbackUsername = `${cleaned || 'user'}_${user.id.replace(/-/g, '').slice(0, 12)}`.slice(
+        0,
+        30
+      );
 
       const { data: createdProfile, error: createError } = await supabase
         .from('profiles')
-        .upsert(
+        .insert(
           {
             id: user.id,
             username: fallbackUsername,
             has_uploaded: false,
-          },
-          { onConflict: 'id' }
+          }
         )
         .select('*')
         .single();
 
       if (createError) {
+        if (createError.code === '23505') {
+          const { data: existingProfile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (existingProfile) {
+            setProfile(existingProfile);
+            return;
+          }
+        }
         console.error('Error creating profile:', createError);
         return;
       }
