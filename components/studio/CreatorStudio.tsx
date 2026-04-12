@@ -12,6 +12,68 @@ const GENRES = ['Hip-Hop', 'Electronic', 'Lo-Fi', 'Indie', 'R&B', 'Afrobeats'];
 const TRACKS_BUCKET = 'tracks';
 const COVER_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_COVER_BUCKET || TRACKS_BUCKET;
 
+/**
+ * Upload a file to Supabase Storage via XMLHttpRequest so we get real
+ * byte-level progress events.  Falls back to the supabase-js client when
+ * XHR isn't available (e.g. non-web environments, missing env vars).
+ */
+async function uploadWithProgress(
+  bucket: string,
+  path: string,
+  file: File,
+  accessToken: string,
+  onProgress: (pct: number) => void
+): Promise<void> {
+  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  if (!supabaseUrl || typeof XMLHttpRequest === 'undefined') {
+    // Fallback: supabase-js client (no progress events)
+    const { error } = await supabase.storage.from(bucket).upload(path, file, {
+      upsert: false,
+      contentType: file.type || undefined,
+    });
+    if (error) throw error;
+    return;
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    // Supabase Storage REST endpoint for object upload
+    xhr.open('POST', `${supabaseUrl}/storage/v1/object/${bucket}/${path}`);
+    xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+    // Supabase Storage REST API accepts a raw binary body; the Content-Type header
+    // must be the file's MIME type (not multipart/form-data).
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.setRequestHeader('x-upsert', 'false');
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        let msg = `Upload failed (HTTP ${xhr.status})`;
+        try {
+          const resp = JSON.parse(xhr.responseText) as { message?: string; error?: string };
+          if (resp.message || resp.error) {
+            msg = resp.message ?? resp.error ?? msg;
+          } else {
+            console.warn('Unexpected storage error shape:', xhr.responseText);
+          }
+        } catch { /* responseText is not JSON — keep generic message */ }
+        reject(new Error(msg));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Network error during upload. Check your connection.'));
+    xhr.onabort = () => reject(new Error('Upload was cancelled.'));
+
+    xhr.send(file);
+  });
+}
+
 function UploadTrackCard() {
   const user = useAuthStore((s) => s.user);
   const profile = useAuthStore((s) => s.profile);
@@ -47,7 +109,7 @@ function UploadTrackCard() {
 
     setUploading(true);
     setError(null);
-    setProgress(10);
+    setProgress(5);
 
     try {
       // Verify session is active before uploading
@@ -60,12 +122,17 @@ function UploadTrackCard() {
       const artistName = profile?.username || user.email?.split('@')[0] || 'Unknown Artist';
       const audioPath = `${user.id}/${Date.now()}_${audioFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
-      const { error: audioErr } = await supabase.storage
-        .from(TRACKS_BUCKET)
-        .upload(audioPath, audioFile, { upsert: false });
-
-      if (audioErr) {
-        const msg = audioErr.message.toLowerCase();
+      try {
+        // Upload audio with real byte-level progress (10 % → 50 %)
+        await uploadWithProgress(
+          TRACKS_BUCKET,
+          audioPath,
+          audioFile,
+          session.access_token,
+          (pct) => setProgress(10 + Math.round(pct * 0.4))
+        );
+      } catch (audioErr: unknown) {
+        const msg = audioErr instanceof Error ? audioErr.message.toLowerCase() : '';
         if (msg.includes('bucket not found') || msg.includes('bucket')) {
           throw new Error('Storage bucket "tracks" not found. Please create it in your Supabase dashboard under Storage → New Bucket (name it "tracks", make it Public).');
         }
@@ -87,11 +154,19 @@ function UploadTrackCard() {
           COVER_BUCKET === TRACKS_BUCKET
             ? `covers/${user.id}/${Date.now()}_${coverFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
             : `${user.id}/${Date.now()}_${coverFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-        const { error: coverErr } = await supabase.storage
-          .from(COVER_BUCKET)
-          .upload(coverPath, coverFile, { upsert: false });
 
-        if (coverErr) throw new Error(coverErr.message);
+        try {
+          // Upload cover art with real progress (50 % → 75 %)
+          await uploadWithProgress(
+            COVER_BUCKET,
+            coverPath,
+            coverFile,
+            session.access_token,
+            (pct) => setProgress(50 + Math.round(pct * 0.25))
+          );
+        } catch (coverErr: unknown) {
+          throw new Error(coverErr instanceof Error ? coverErr.message : 'Cover upload failed');
+        }
 
         const { data: coverUrlData } = supabase.storage
           .from(COVER_BUCKET)
@@ -99,7 +174,7 @@ function UploadTrackCard() {
         coverUrlStr = coverUrlData.publicUrl;
       }
 
-      setProgress(80);
+      setProgress(78);
 
       const { error: dbErr } = await supabase.from('tracks').insert({
         user_id: user.id,
