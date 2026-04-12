@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Platform, View, Text, ScrollView } from 'react-native';
 import { supabase, getAccessTokenNoLock } from '@/lib/supabase';
+import { withTimeout } from '@/lib/timeout';
 import { useAuthStore } from '@/store/authStore';
 import type { Track } from '@/lib/database.types';
 import ReplayHeatmap from '@/components/studio/ReplayHeatmap';
@@ -14,33 +15,10 @@ const TRACKS_BUCKET = 'tracks';
 // to override (e.g. if you renamed the bucket), otherwise the default is "covers".
 const COVER_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_COVER_BUCKET || 'covers';
 const AUTH_SESSION_TIMEOUT_MS = 15000;
-const STORAGE_FALLBACK_TIMEOUT_MS = 300000;
+const STORAGE_UPLOAD_TIMEOUT_MS = 300000; // 5 minutes
 const DB_TIMEOUT_MS = 45000;
-
-function isAbortLikeError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const msg = err.message.toLowerCase();
-  return err.name === 'AbortError' || msg.includes('aborted') || msg.includes('timeout');
-}
-
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
-      }),
-    ]);
-  } catch (err) {
-    if (isAbortLikeError(err)) {
-      throw new Error(timeoutMessage);
-    }
-    throw err;
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
-}
+const SESSION_ERROR_NO_ACTIVE = 'no active session';
+const SESSION_ERROR_SIGN_IN = 'sign in';
 
 /**
  * Upload a file to Supabase Storage via XMLHttpRequest so we get real
@@ -69,7 +47,7 @@ async function uploadWithProgress(
         upsert: false,
         contentType: file.type || undefined,
       }),
-      STORAGE_FALLBACK_TIMEOUT_MS,
+      STORAGE_UPLOAD_TIMEOUT_MS,
       'Upload timed out while sending file to storage. Check your network and Supabase project status.'
     );
     if (error) throw error;
@@ -208,8 +186,13 @@ function UploadTrackCard() {
       let accessToken: string;
       try {
         accessToken = await getAccessTokenNoLock(AUTH_SESSION_TIMEOUT_MS);
-      } catch {
-        setError('Session check timed out or expired. Close duplicate tabs, then sign out and sign in again.');
+      } catch (tokenErr: unknown) {
+        const tokenMessage = tokenErr instanceof Error ? tokenErr.message.toLowerCase() : '';
+        if (tokenMessage.includes(SESSION_ERROR_NO_ACTIVE) || tokenMessage.includes(SESSION_ERROR_SIGN_IN)) {
+          setError('Session expired. Please sign out and sign in again.');
+        } else {
+          setError('Session check timed out. Close duplicate tabs and retry the upload.');
+        }
         return;
       }
 
@@ -291,12 +274,11 @@ function UploadTrackCard() {
 
       // Mark has_uploaded on profile
       try {
-        const profileUpdatePromise = supabase
-          .from('profiles')
-          .update({ has_uploaded: true })
-          .eq('id', user.id);
         await withTimeout(
-          profileUpdatePromise,
+          supabase
+            .from('profiles')
+            .update({ has_uploaded: true })
+            .eq('id', user.id),
           DB_TIMEOUT_MS,
           'Profile update timed out after upload.'
         );
