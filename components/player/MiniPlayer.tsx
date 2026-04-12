@@ -59,7 +59,7 @@ function WebMiniPlayer() {
             togglePlay();
           }}
           style={{
-            background: '#A855F7',
+            background: '#F59E0B',
             border: 'none',
             borderRadius: '50%',
             width: 32,
@@ -195,7 +195,7 @@ function NativeMiniPlayer() {
       <TouchableOpacity
         onPress={togglePlay}
         style={{
-          backgroundColor: '#A855F7',
+          backgroundColor: '#F59E0B',
           width: 32,
           height: 32,
           borderRadius: 16,

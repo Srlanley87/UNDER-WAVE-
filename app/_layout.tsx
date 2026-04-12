@@ -13,6 +13,7 @@ import '../global.css';
 export default function RootLayout() {
   useAuth();
   const user = useAuthStore((s) => s.user);
+  const isAuthLoading = useAuthStore((s) => s.isAuthLoading);
 
   return (
     <SafeAreaProvider>
@@ -26,7 +27,7 @@ export default function RootLayout() {
           }}
         />
         <PersistentPlayer />
-        {!user && <AuthModal />}
+        {!isAuthLoading && !user && <AuthModal />}
       </View>
     </SafeAreaProvider>
   );

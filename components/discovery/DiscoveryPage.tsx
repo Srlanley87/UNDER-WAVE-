@@ -92,11 +92,11 @@ function WebDiscoveryPage() {
               borderRadius: 100,
               border:
                 activeGenre === genre
-                  ? '1px solid #A855F7'
+                  ? '1px solid #F59E0B'
                   : '1px solid rgba(255,255,255,0.12)',
               backgroundColor:
-                activeGenre === genre ? 'rgba(168,85,247,0.15)' : 'transparent',
-              color: activeGenre === genre ? '#A855F7' : 'rgba(255,255,255,0.6)',
+                activeGenre === genre ? 'rgba(245,158,11,0.15)' : 'transparent',
+              color: activeGenre === genre ? '#F59E0B' : 'rgba(255,255,255,0.6)',
               fontWeight: activeGenre === genre ? 700 : 500,
               fontSize: 14,
               cursor: 'pointer',
@@ -115,7 +115,7 @@ function WebDiscoveryPage() {
                   left: '20%',
                   right: '20%',
                   height: 2,
-                  backgroundColor: '#A855F7',
+                  backgroundColor: '#F59E0B',
                   borderRadius: 1,
                 }}
               />
@@ -217,16 +217,16 @@ function NativeDiscoveryPage() {
               paddingVertical: 8,
               borderRadius: 100,
               borderWidth: 1,
-              borderColor: activeGenre === genre ? '#A855F7' : 'rgba(255,255,255,0.12)',
+              borderColor: activeGenre === genre ? '#F59E0B' : 'rgba(255,255,255,0.12)',
               backgroundColor:
-                activeGenre === genre ? 'rgba(168,85,247,0.15)' : 'transparent',
+                activeGenre === genre ? 'rgba(245,158,11,0.15)' : 'transparent',
               marginRight: 4,
             }}
           >
             <Text
               onPress={() => setActiveGenre(genre)}
               style={{
-                color: activeGenre === genre ? '#A855F7' : 'rgba(255,255,255,0.6)',
+                color: activeGenre === genre ? '#F59E0B' : 'rgba(255,255,255,0.6)',
                 fontWeight: activeGenre === genre ? '700' : '500',
                 fontSize: 13,
               }}

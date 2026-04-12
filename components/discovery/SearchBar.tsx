@@ -23,11 +23,11 @@ function WebSearchBar({ value, onChange }: SearchBarProps) {
         borderRadius: 12,
         padding: '10px 14px',
         border: focused
-          ? '1px solid #A855F7'
+          ? '1px solid #F59E0B'
           : '1px solid rgba(255,255,255,0.08)',
         marginBottom: 4,
         transition: 'border-color 0.2s',
-        boxShadow: focused ? '0 0 0 3px rgba(168,85,247,0.12)' : 'none',
+        boxShadow: focused ? '0 0 0 3px rgba(245,158,11,0.12)' : 'none',
       }}
     >
       <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 16, flexShrink: 0 }}>
@@ -91,7 +91,7 @@ function NativeSearchBar({ value, onChange }: SearchBarProps) {
         paddingHorizontal: 14,
         paddingVertical: 10,
         borderWidth: 1,
-        borderColor: focused ? '#A855F7' : 'rgba(255,255,255,0.08)',
+        borderColor: focused ? '#F59E0B' : 'rgba(255,255,255,0.08)',
         marginBottom: 4,
       }}
     >

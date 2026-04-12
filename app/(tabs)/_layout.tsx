@@ -1,13 +1,11 @@
-import { Platform, View } from 'react-native';
+import { Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuthStore } from '@/store/authStore';
 
+const GOLD = '#F59E0B';
 const TAB_BAR_HEIGHT = 64;
 
 export default function TabsLayout() {
-  const user = useAuthStore((s) => s.user);
-
   return (
     <Tabs
       screenOptions={{
@@ -22,7 +20,7 @@ export default function TabsLayout() {
           // Extra bottom padding on web to account for PersistentPlayer
           ...(Platform.OS === 'web' ? { paddingBottom: 80 } : {}),
         },
-        tabBarActiveTintColor: '#A855F7',
+        tabBarActiveTintColor: GOLD,
         tabBarInactiveTintColor: 'rgba(255,255,255,0.4)',
         tabBarLabelStyle: {
           fontSize: 11,
@@ -50,21 +48,20 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="studio"
+        options={{
+          title: 'Upload',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="cloud-upload-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="studio"
-        options={{
-          href: user ? undefined : null,
-          title: 'Studio',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="mic-outline" size={size} color={color} />
           ),
         }}
       />

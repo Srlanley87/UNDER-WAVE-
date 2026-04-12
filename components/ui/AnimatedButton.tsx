@@ -32,7 +32,7 @@ function WebAnimatedButton({
 
   const variantStyles: Record<string, React.CSSProperties> = {
     primary: {
-      background: 'linear-gradient(135deg, #A855F7, #7C3AED)',
+      background: 'linear-gradient(135deg, #F59E0B, #D97706)',
       color: '#ffffff',
     },
     secondary: {
@@ -67,7 +67,7 @@ function NativeAnimatedButton({
 }: AnimatedButtonProps) {
   const variantStyles = {
     primary: {
-      backgroundColor: '#A855F7',
+      backgroundColor: '#F59E0B',
       borderWidth: 0,
     },
     secondary: {

@@ -137,11 +137,11 @@ function UploadTrackCard() {
       {success && (
         <div
           style={{
-            backgroundColor: 'rgba(168,85,247,0.1)',
-            border: '1px solid rgba(168,85,247,0.3)',
+            backgroundColor: 'rgba(245,158,11,0.1)',
+            border: '1px solid rgba(245,158,11,0.3)',
             borderRadius: 12,
             padding: 12,
-            color: '#A855F7',
+            color: '#F59E0B',
             fontSize: 14,
             marginBottom: 16,
           }}
@@ -153,11 +153,11 @@ function UploadTrackCard() {
       {error && (
         <div
           style={{
-            backgroundColor: 'rgba(236,72,153,0.1)',
-            border: '1px solid rgba(236,72,153,0.3)',
+            backgroundColor: 'rgba(248,113,113,0.1)',
+            border: '1px solid rgba(248,113,113,0.3)',
             borderRadius: 12,
             padding: 12,
-            color: '#EC4899',
+            color: '#F87171',
             fontSize: 14,
             marginBottom: 16,
           }}
@@ -192,13 +192,13 @@ function UploadTrackCard() {
         {/* Audio file drop zone */}
         <label
           style={{
-            border: `2px dashed ${audioFile ? '#A855F7' : 'rgba(255,255,255,0.12)'}`,
+            border: `2px dashed ${audioFile ? '#F59E0B' : 'rgba(255,255,255,0.12)'}`,
             borderRadius: 14,
             padding: '28px 20px',
             textAlign: 'center',
             cursor: 'pointer',
             transition: 'border-color 0.2s',
-            backgroundColor: audioFile ? 'rgba(168,85,247,0.05)' : 'transparent',
+            backgroundColor: audioFile ? 'rgba(245,158,11,0.05)' : 'transparent',
           }}
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
@@ -214,7 +214,7 @@ function UploadTrackCard() {
             onChange={(e) => e.target.files?.[0] && setAudioFile(e.target.files[0])}
           />
           <div style={{ fontSize: 28, marginBottom: 8 }}>🎵</div>
-          <div style={{ color: audioFile ? '#A855F7' : 'rgba(255,255,255,0.5)', fontSize: 14 }}>
+          <div style={{ color: audioFile ? '#F59E0B' : 'rgba(255,255,255,0.5)', fontSize: 14 }}>
             {audioFile ? audioFile.name : 'Drop audio file here or click to browse'}
           </div>
           <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, marginTop: 4 }}>
@@ -225,13 +225,13 @@ function UploadTrackCard() {
         {/* Cover art */}
         <label
           style={{
-            border: `2px dashed ${coverFile ? '#A855F7' : 'rgba(255,255,255,0.12)'}`,
+            border: `2px dashed ${coverFile ? '#F59E0B' : 'rgba(255,255,255,0.12)'}`,
             borderRadius: 14,
             padding: '16px 20px',
             textAlign: 'center',
             cursor: 'pointer',
             transition: 'border-color 0.2s',
-            backgroundColor: coverFile ? 'rgba(168,85,247,0.05)' : 'transparent',
+            backgroundColor: coverFile ? 'rgba(245,158,11,0.05)' : 'transparent',
           }}
         >
           <input
@@ -240,7 +240,7 @@ function UploadTrackCard() {
             style={{ display: 'none' }}
             onChange={(e) => e.target.files?.[0] && setCoverFile(e.target.files[0])}
           />
-          <div style={{ color: coverFile ? '#A855F7' : 'rgba(255,255,255,0.5)', fontSize: 14 }}>
+          <div style={{ color: coverFile ? '#F59E0B' : 'rgba(255,255,255,0.5)', fontSize: 14 }}>
             {coverFile ? coverFile.name : '🖼 Add cover art (optional)'}
           </div>
         </label>
@@ -260,7 +260,7 @@ function UploadTrackCard() {
               transition={{ duration: 0.4 }}
               style={{
                 height: '100%',
-                background: 'linear-gradient(90deg, #A855F7, #EC4899)',
+                background: 'linear-gradient(90deg, #F59E0B, #F59E0B)',
                 borderRadius: 100,
               }}
             />
@@ -272,7 +272,7 @@ function UploadTrackCard() {
           onClick={handleUpload}
           disabled={uploading}
           style={{
-            background: 'linear-gradient(135deg, #A855F7, #7C3AED)',
+            background: 'linear-gradient(135deg, #F59E0B, #D97706)',
             border: 'none',
             borderRadius: 12,
             padding: '14px 0',
@@ -371,13 +371,13 @@ function AnalyticsCard({ tracks }: { tracks: Track[] }) {
               </div>
             </div>
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              <div style={{ color: '#A855F7', fontWeight: 700, fontSize: 15 }}>
+              <div style={{ color: '#F59E0B', fontWeight: 700, fontSize: 15 }}>
                 {t.play_count.toLocaleString()}
               </div>
               <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>plays</div>
             </div>
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              <div style={{ color: '#EC4899', fontWeight: 700, fontSize: 15 }}>
+              <div style={{ color: '#F59E0B', fontWeight: 700, fontSize: 15 }}>
                 {t.like_count.toLocaleString()}
               </div>
               <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>likes</div>
@@ -436,10 +436,23 @@ export default function CreatorStudio() {
   }, [fetchMyTracks]);
 
   if (Platform.OS !== 'web') {
+    if (!user) {
+      return (
+        <View style={{ flex: 1, backgroundColor: '#000000', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <Text style={{ color: '#F59E0B', fontSize: 40, marginBottom: 12 }}>🎵</Text>
+          <Text style={{ color: '#ffffff', fontSize: 20, fontWeight: '700', marginBottom: 8, textAlign: 'center' }}>
+            Sign in to Upload
+          </Text>
+          <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14, textAlign: 'center' }}>
+            Create an account or sign in to upload your tracks.
+          </Text>
+        </View>
+      );
+    }
     return (
       <View style={{ flex: 1, backgroundColor: '#000000', padding: 24 }}>
         <Text style={{ color: '#ffffff', fontSize: 22, fontWeight: '800', marginBottom: 16 }}>
-          Creator Studio
+          Upload Music
         </Text>
         <View
           style={{
@@ -451,11 +464,25 @@ export default function CreatorStudio() {
           }}
         >
           <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, lineHeight: 22 }}>
-            Full studio features are available on web. Visit underwave.app to upload tracks,
-            view analytics, and access the replay heatmap.
+            Track uploads are available on web. Open this app in a browser to upload your music.
           </Text>
         </View>
       </View>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div style={{ minHeight: '100vh', backgroundColor: '#000000', display: 'flex',
+        alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16, padding: 24 }}>
+        <div style={{ fontSize: 56 }}>🎵</div>
+        <h2 style={{ color: '#ffffff', fontWeight: 800, fontSize: 24, margin: 0 }}>
+          Sign in to Upload Music
+        </h2>
+        <p style={{ color: 'rgba(255,255,255,0.5)', textAlign: 'center', maxWidth: 320, margin: 0 }}>
+          Create a free account or sign in to start uploading your tracks to UNDERWAVE.
+        </p>
+      </div>
     );
   }
 
@@ -476,10 +503,10 @@ export default function CreatorStudio() {
           margin: '0 0 8px',
         }}
       >
-        Creator Studio
+        Upload Music
       </h1>
       <p style={{ color: 'rgba(255,255,255,0.5)', marginBottom: 28 }}>
-        Manage your music and track performance.
+        Share your music with the world and track performance.
       </p>
 
       <div

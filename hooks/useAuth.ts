@@ -4,15 +4,16 @@ import { useAuthStore } from '@/store/authStore';
 import type { User } from '@supabase/supabase-js';
 
 export function useAuth() {
-  const { setSession, setProfile, signOut } = useAuthStore();
+  const { setSession, setProfile, setIsAuthLoading, signOut } = useAuthStore();
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Get initial session - resolve loading state once done
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       if (session?.user) {
-        fetchProfile(session.user);
+        await fetchProfile(session.user);
       }
+      setIsAuthLoading(false);
     });
 
     // Subscribe to auth changes
@@ -28,7 +29,7 @@ export function useAuth() {
     });
 
     return () => subscription.unsubscribe();
-  }, [setSession, setProfile, signOut]);
+  }, [setSession, setProfile, setIsAuthLoading, signOut]);
 
   async function fetchProfile(user: User) {
     try {

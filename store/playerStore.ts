@@ -24,7 +24,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   isPlaying: false,
   volume: 0.8,
   repeat: 'none',
-  dominantColor: '#A855F7',
+  dominantColor: '#F59E0B',
 
   setTrack: (track, queue) =>
     set({

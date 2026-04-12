@@ -27,7 +27,7 @@ export default function Profile() {
           padding: 24,
         }}
       >
-        <Ionicons name="person-circle-outline" size={80} color="#A855F7" />
+        <Ionicons name="person-circle-outline" size={80} color="#F59E0B" />
         <Text
           style={{
             color: '#ffffff',
@@ -63,7 +63,7 @@ export default function Profile() {
               height: 96,
               borderRadius: 48,
               borderWidth: 2,
-              borderColor: '#A855F7',
+              borderColor: '#F59E0B',
             }}
           />
         ) : (
@@ -76,10 +76,10 @@ export default function Profile() {
               alignItems: 'center',
               justifyContent: 'center',
               borderWidth: 2,
-              borderColor: '#A855F7',
+              borderColor: '#F59E0B',
             }}
           >
-            <Ionicons name="person" size={48} color="#A855F7" />
+            <Ionicons name="person" size={48} color="#F59E0B" />
           </View>
         )}
         <Text
@@ -119,7 +119,7 @@ export default function Profile() {
         }}
       >
         <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={{ color: '#A855F7', fontSize: 24, fontWeight: '700' }}>0</Text>
+          <Text style={{ color: '#F59E0B', fontSize: 24, fontWeight: '700' }}>0</Text>
           <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 4 }}>
             Tracks
           </Text>
@@ -131,7 +131,7 @@ export default function Profile() {
           }}
         />
         <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={{ color: '#A855F7', fontSize: 24, fontWeight: '700' }}>0</Text>
+          <Text style={{ color: '#F59E0B', fontSize: 24, fontWeight: '700' }}>0</Text>
           <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 4 }}>
             Followers
           </Text>
@@ -143,7 +143,7 @@ export default function Profile() {
           }}
         />
         <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={{ color: '#A855F7', fontSize: 24, fontWeight: '700' }}>0</Text>
+          <Text style={{ color: '#F59E0B', fontSize: 24, fontWeight: '700' }}>0</Text>
           <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 4 }}>
             Following
           </Text>

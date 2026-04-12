@@ -85,7 +85,7 @@ function WebWaveformPlayer({ track }: WaveformPlayerProps) {
     }
   }
 
-  const color = isActive ? dominantColor : '#A855F7';
+  const color = isActive ? dominantColor : '#F59E0B';
 
   return (
     <div style={{ position: 'relative' }}>
@@ -179,7 +179,7 @@ function WebWaveformPlayer({ track }: WaveformPlayerProps) {
             <div
               style={{
                 fontSize: 11,
-                color: '#A855F7',
+                color: '#F59E0B',
                 marginBottom: 8,
                 fontWeight: 600,
               }}
@@ -212,7 +212,7 @@ function WebWaveformPlayer({ track }: WaveformPlayerProps) {
                     onClick={() => postComment(activeBar)}
                     style={{
                       flex: 1,
-                      backgroundColor: '#A855F7',
+                      backgroundColor: '#F59E0B',
                       border: 'none',
                       borderRadius: 8,
                       padding: '6px 0',
@@ -279,7 +279,7 @@ function WebWaveformPlayer({ track }: WaveformPlayerProps) {
                   width: 28,
                   height: 28,
                   borderRadius: '50%',
-                  backgroundColor: '#A855F7',
+                  backgroundColor: '#F59E0B',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -294,7 +294,7 @@ function WebWaveformPlayer({ track }: WaveformPlayerProps) {
               <div>
                 <span
                   style={{
-                    color: '#A855F7',
+                    color: '#F59E0B',
                     fontSize: 11,
                     fontWeight: 600,
                     marginRight: 8,
@@ -318,7 +318,7 @@ function NativeWaveformPlayer({ track }: WaveformPlayerProps) {
   const [playhead, setPlayhead] = useState(0);
   const bars = generateWaveform(track.id, 40);
   const { dominantColor, currentTrack } = usePlayerStore();
-  const color = currentTrack?.id === track.id ? dominantColor : '#A855F7';
+  const color = currentTrack?.id === track.id ? dominantColor : '#F59E0B';
 
   return (
     <View
