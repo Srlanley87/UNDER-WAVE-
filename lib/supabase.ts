@@ -7,14 +7,29 @@ import { withTimeout } from '@/lib/timeout';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
-const isClientSideWeb = Platform.OS === 'web' && typeof window !== 'undefined';
+const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
+
+/**
+ * Explicit localStorage adapter for web environments.
+ * Passing `undefined` as the storage option causes Supabase to use its
+ * internal fallback which can fail silently on Vercel (Expo Web), making
+ * the session disappear on page refresh.  Using browser localStorage
+ * directly guarantees the session persists across refreshes.
+ */
+const webLocalStorage = isWeb
+  ? {
+      getItem: (key: string) => Promise.resolve(window.localStorage.getItem(key)),
+      setItem: (key: string, value: string) => Promise.resolve(window.localStorage.setItem(key, value)),
+      removeItem: (key: string) => Promise.resolve(window.localStorage.removeItem(key)),
+    }
+  : undefined;
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: Platform.OS === 'web' ? undefined : AsyncStorage,
+    storage: isWeb ? webLocalStorage : AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: isClientSideWeb,
+    detectSessionInUrl: isWeb,
   },
 });
 
