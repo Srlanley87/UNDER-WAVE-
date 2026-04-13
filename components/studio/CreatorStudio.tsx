@@ -1,7 +1,6 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Platform, View, Text, ScrollView } from 'react-native';
-import { supabase, getFreshAccessToken } from '@/lib/supabase';
-import { withTimeout } from '@/lib/timeout';
+import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 import type { Track } from '@/lib/database.types';
 import ReplayHeatmap from '@/components/studio/ReplayHeatmap';
@@ -14,126 +13,6 @@ const TRACKS_BUCKET = 'audio';
 // Cover art lives in a dedicated "cover" bucket. Set EXPO_PUBLIC_SUPABASE_COVER_BUCKET
 // to override (e.g. if you renamed the bucket), otherwise the default is "cover".
 const COVER_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_COVER_BUCKET || 'cover';
-const AUTH_SESSION_TIMEOUT_MS = 15000;
-const STORAGE_UPLOAD_TIMEOUT_MS = 300000; // 5 minutes
-const DB_TIMEOUT_MS = 45000;
-const SESSION_ERROR_NO_ACTIVE = 'no active session';
-const SESSION_ERROR_SIGN_IN = 'sign in';
-
-/**
- * Upload a file to Supabase Storage via XMLHttpRequest so we get real
- * byte-level progress events.  Falls back to the supabase-js client when
- * XHR isn't available (e.g. non-web environments, missing env vars).
- */
-async function uploadWithProgress(
-  bucket: string,
-  path: string,
-  file: File,
-  accessToken: string,
-  onProgress: (pct: number) => void
-): Promise<void> {
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-  console.log(`[UPLOAD] File selected: ${file.name} (${file.size} bytes, type: ${file.type || 'unknown'})`);
-
-  if (!supabaseUrl || typeof XMLHttpRequest === 'undefined') {
-    console.log('[UPLOAD] Using supabase-js fallback (XHR unavailable or no URL)');
-    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-    if (!anonKey) {
-      throw new Error('Supabase credentials not configured. Set EXPO_PUBLIC_SUPABASE_ANON_KEY in your environment.');
-    }
-    // Fallback: supabase-js client (no progress events)
-    const { error } = await withTimeout(
-      supabase.storage.from(bucket).upload(path, file, {
-        upsert: false,
-        contentType: file.type || undefined,
-      }),
-      STORAGE_UPLOAD_TIMEOUT_MS,
-      'Upload timed out while sending file to storage. Check your network and Supabase project status.'
-    );
-    if (error) throw error;
-    return;
-  }
-
-  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  if (!anonKey) {
-    throw new Error(
-      'Supabase credentials not configured. Add EXPO_PUBLIC_SUPABASE_ANON_KEY to your .env.local file and restart the dev server.'
-    );
-  }
-
-  const uploadUrl = `${supabaseUrl}/storage/v1/object/${bucket}/${path}`;
-  console.log(`[UPLOAD] Starting upload to: ${uploadUrl}`);
-
-  return new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    // Supabase Storage REST endpoint for object upload
-    xhr.open('POST', uploadUrl);
-    // Supabase's API gateway (Kong) requires the apikey header on every request,
-    // even when using a Bearer JWT.  Without it the gateway returns 403 and the
-    // upload stalls at 0 % / 5 %.
-    xhr.setRequestHeader('apikey', anonKey);
-    xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
-    // Supabase Storage REST API accepts a raw binary body; the Content-Type header
-    // must be the file's MIME type (not multipart/form-data).
-    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-    xhr.setRequestHeader('x-upsert', 'false');
-    // Set a generous timeout so the upload doesn't hang indefinitely
-    xhr.timeout = 300000; // 5 minutes
-
-    console.log('[UPLOAD] Headers set: apikey, Authorization, Content-Type');
-    console.log('[UPLOAD] Sending file...');
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
-        const pct = Math.round((e.loaded / e.total) * 100);
-        const loadedMB = (e.loaded / 1024 / 1024).toFixed(1);
-        const totalMB = (e.total / 1024 / 1024).toFixed(1);
-        console.log(`[UPLOAD] XHR Progress: ${pct}% (${loadedMB}MB / ${totalMB}MB)`);
-        onProgress(pct);
-      }
-    };
-
-    xhr.onload = () => {
-      console.log(`[UPLOAD] Response: HTTP ${xhr.status} ${xhr.statusText}`);
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve();
-      } else {
-        let msg = `Upload failed (HTTP ${xhr.status})`;
-        console.error('[UPLOAD] Error response body:', xhr.responseText);
-        try {
-          const resp = JSON.parse(xhr.responseText) as { message?: string; error?: string };
-          if (resp.message || resp.error) {
-            const detail = resp.message ?? resp.error ?? '';
-            if (detail.toLowerCase().includes('bucket not found')) {
-              msg = `Storage bucket '${bucket}' not found in Supabase. Create it in the Supabase Dashboard under Storage.`;
-            } else if (detail.toLowerCase().includes('not authorized') || detail.toLowerCase().includes('policy')) {
-              msg = `Upload permission denied by Supabase storage policy. Check RLS policies on the '${bucket}' bucket.`;
-            } else {
-              msg = detail;
-            }
-          } else {
-            console.warn('[UPLOAD] Unexpected storage error shape:', xhr.responseText);
-          }
-        } catch { /* responseText is not JSON — keep generic message */ }
-        reject(new Error(msg));
-      }
-    };
-    xhr.onerror = () => {
-      console.error('[UPLOAD] XHR network error — check CORS, Supabase URL, and internet connection');
-      reject(new Error('Network error - check your connection and Supabase configuration.'));
-    };
-    xhr.onabort = () => {
-      console.warn('[UPLOAD] Upload was cancelled');
-      reject(new Error('Upload was cancelled.'));
-    };
-    xhr.ontimeout = () => {
-      console.error('[UPLOAD] Upload timed out after 5 minutes');
-      reject(new Error('Upload timed out. Check your connection and try with a smaller file first.'));
-    };
-
-    xhr.send(file);
-  });
-}
 
 function UploadTrackCard() {
   const user = useAuthStore((s) => s.user);
@@ -145,9 +24,6 @@ function UploadTrackCard() {
   const [uploading, setUploading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
-  // Mutex: prevent concurrent uploads that would fight over the auth lock
-  const isUploadingRef = useRef(false);
 
   const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
   const MAX_COVER_BYTES = 5 * 1024 * 1024;
@@ -170,114 +46,62 @@ function UploadTrackCard() {
       return;
     }
 
-    // Mutex guard — only one upload at a time to avoid auth lock contention
-    if (isUploadingRef.current) {
-      setError('Upload already in progress, please wait…');
-      return;
-    }
-    isUploadingRef.current = true;
     setUploading(true);
     setError(null);
 
     try {
-      // Force-refresh the session token immediately before the upload so we
-      // are guaranteed to have a fresh, non-stale token.  Using refreshSession()
-      // instead of getSession() prevents the "lock was stolen" race condition
-      // where autoRefreshToken fires concurrently and invalidates the token we
-      // just read.
-      let accessToken: string;
-      try {
-        accessToken = await getFreshAccessToken(AUTH_SESSION_TIMEOUT_MS);
-      } catch (tokenErr: unknown) {
-        const tokenMessage = tokenErr instanceof Error ? tokenErr.message.toLowerCase() : '';
-        if (tokenMessage.includes(SESSION_ERROR_NO_ACTIVE) || tokenMessage.includes(SESSION_ERROR_SIGN_IN) || tokenMessage.includes('expired')) {
-          setError('Session expired. Please sign out and sign in again.');
-        } else {
-          setError('Session check timed out. Close duplicate tabs and retry the upload.');
-        }
-        return;
-      }
-
-      /**
-       * Upload with automatic retry on auth failure (401/403).
-       * If the first attempt fails with an auth error, get a fresh token and
-       * retry once.  This handles edge cases where the token becomes stale
-       * between the refresh call and the actual XHR request.
-       */
-      async function uploadWithRetry(
-        bucket: string,
-        path: string,
-        file: File,
-        token: string,
-        onProgress: (pct: number) => void
-      ): Promise<void> {
-        try {
-          await uploadWithProgress(bucket, path, file, token, onProgress);
-        } catch (uploadErr: unknown) {
-          const errMsg = uploadErr instanceof Error ? uploadErr.message : '';
-          // Only retry on explicit HTTP 401/403 auth failures — use the
-          // specific status codes logged by uploadWithProgress rather than
-          // substring-matching on arbitrary error text.
-          const isAuthError = /HTTP (401|403)/.test(errMsg);
-          if (isAuthError) {
-            console.warn('[UPLOAD] Auth error on first attempt — refreshing token and retrying...');
-            setUploadStatus('Retrying upload...');
-            const freshToken = await getFreshAccessToken(AUTH_SESSION_TIMEOUT_MS);
-            await uploadWithProgress(bucket, path, file, freshToken, onProgress);
-            setUploadStatus(null);
-          } else {
-            throw uploadErr;
-          }
-        }
-      }
-
       const artistName = profile?.username || user.email?.split('@')[0] || 'Unknown Artist';
       const audioPath = `${user.id}/${Date.now()}_${audioFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
-      console.log(`[UPLOAD] Uploading audio track: ${audioFile.name} (${(audioFile.size / 1024 / 1024).toFixed(2)} MB)`);
-      await uploadWithRetry(
-        TRACKS_BUCKET,
-        audioPath,
-        audioFile,
-        accessToken,
-        () => {} // progress events logged inside uploadWithProgress
-      );
+      console.log(`[UPLOAD] Uploading audio: ${audioFile.name} (${(audioFile.size / 1024 / 1024).toFixed(2)} MB)`);
 
-      console.log('[UPLOAD] Getting public URL...');
+      // Use standard Supabase client upload - it handles auth automatically
+      const { error: audioError } = await supabase.storage
+        .from(TRACKS_BUCKET)
+        .upload(audioPath, audioFile, { upsert: false, contentType: audioFile.type || 'application/octet-stream' });
+
+      if (audioError) {
+        console.error('[UPLOAD] Audio upload failed:', audioError);
+        throw new Error(`Audio upload failed: ${audioError.message}`);
+      }
+
+      console.log('[UPLOAD] Audio uploaded successfully');
+
+      // Get public URL for the audio file
       const { data: audioUrl } = supabase.storage
         .from(TRACKS_BUCKET)
         .getPublicUrl(audioPath);
-      console.log(`[UPLOAD] Audio URL: ${audioUrl.publicUrl}`);
 
       let coverUrlStr: string | null = null;
 
+      // Upload cover art if provided
       if (coverFile) {
         const coverPath =
           COVER_BUCKET === TRACKS_BUCKET
             ? `covers/${user.id}/${Date.now()}_${coverFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
             : `${user.id}/${Date.now()}_${coverFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
-        console.log(`[UPLOAD] Uploading cover art: ${coverFile.name}`);
-        await uploadWithRetry(
-          COVER_BUCKET,
-          coverPath,
-          coverFile,
-          accessToken,
-          () => {}
-        );
+        console.log(`[UPLOAD] Uploading cover: ${coverFile.name}`);
 
-        const { data: coverUrlData } = supabase.storage
+        const { error: coverError } = await supabase.storage
           .from(COVER_BUCKET)
-          .getPublicUrl(coverPath);
-        coverUrlStr = coverUrlData.publicUrl;
-        console.log(`[UPLOAD] Cover URL: ${coverUrlStr}`);
+          .upload(coverPath, coverFile, { upsert: false, contentType: coverFile.type || 'application/octet-stream' });
+
+        if (coverError) {
+          console.error('[UPLOAD] Cover upload failed:', coverError);
+          // Don't fail - cover is optional
+        } else {
+          const { data: coverUrlData } = supabase.storage
+            .from(COVER_BUCKET)
+            .getPublicUrl(coverPath);
+          coverUrlStr = coverUrlData.publicUrl;
+          console.log('[UPLOAD] Cover uploaded successfully');
+        }
       }
 
-      // accessToken is a local string — it will be garbage-collected when this
-      // function returns.  No reference is kept, so the auth lock stays free.
-
-      console.log('[DB] Inserting track record with audio_url...');
-      const trackInsertPromise = supabase.from('tracks').insert({
+      // Insert track record into database
+      console.log('[DB] Inserting track record...');
+      const { error: dbErr } = await supabase.from('tracks').insert({
         user_id: user.id,
         title: title.trim(),
         artist: artistName,
@@ -287,20 +111,15 @@ function UploadTrackCard() {
         play_count: 0,
         like_count: 0,
       });
-      const { error: dbErr } = await withTimeout(
-        trackInsertPromise,
-        DB_TIMEOUT_MS,
-        'Saving track metadata timed out. Your file may be uploaded, but database save did not finish.'
-      );
 
       if (dbErr) {
-        console.error('[DB] Insert error:', dbErr);
+        console.error('[DB] Insert failed:', dbErr);
         const dbMsg = dbErr.message.toLowerCase();
         if (dbMsg.includes('policy') || dbMsg.includes('permission') || dbErr.code === '42501') {
-          throw new Error('Database permission denied. Make sure the "tracks" table has an RLS INSERT policy for authenticated users.');
+          throw new Error('Database permission denied. Make sure the "tracks" table has RLS INSERT policy.');
         }
         if (dbMsg.includes('violates foreign key') || dbErr.code === '23503') {
-          throw new Error('Your profile does not exist yet. Please visit the Profile tab first, then try again.');
+          throw new Error('Your profile does not exist. Please visit the Profile tab first.');
         }
         throw dbErr;
       }
@@ -308,32 +127,25 @@ function UploadTrackCard() {
       console.log('[DB] Track inserted successfully');
 
       // Mark has_uploaded on profile
-      try {
-        await withTimeout(
-          supabase
-            .from('profiles')
-            .update({ has_uploaded: true })
-            .eq('id', user.id),
-          DB_TIMEOUT_MS,
-          'Profile update timed out after upload.'
-        );
-      } catch (profileErr) {
-        console.warn('[DB] Profile update skipped:', profileErr);
-      }
+      await supabase
+        .from('profiles')
+        .update({ has_uploaded: true })
+        .eq('id', user.id)
+        .then(({ error: profileErr }) => {
+          if (profileErr) console.warn('[DB] Profile update failed:', profileErr.message);
+        });
 
-      console.log('[SUCCESS] Upload complete');
       setSuccess(true);
       setTitle('');
       setAudioFile(null);
       setCoverFile(null);
+      console.log('[SUCCESS] Track uploaded successfully');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Upload failed. Check your Supabase storage and database configuration.';
-      console.error('[UPLOAD] Upload failed:', msg);
-      setError(msg);
+      const errorMsg = err instanceof Error ? err.message : 'Upload failed';
+      console.error('[ERROR]', errorMsg);
+      setError(errorMsg);
     } finally {
-      isUploadingRef.current = false;
       setUploading(false);
-      setUploadStatus(null);
     }
   }
 
@@ -402,22 +214,6 @@ function UploadTrackCard() {
           }}
         >
           {error}
-        </div>
-      )}
-
-      {uploadStatus && (
-        <div
-          style={{
-            backgroundColor: 'rgba(59,130,246,0.1)',
-            border: '1px solid rgba(59,130,246,0.3)',
-            borderRadius: 12,
-            padding: 12,
-            color: '#60A5FA',
-            fontSize: 14,
-            marginBottom: 16,
-          }}
-        >
-          {uploadStatus}
         </div>
       )}
 
