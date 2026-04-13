@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Platform, View, Text, ScrollView } from 'react-native';
-import { supabase, getAccessTokenNoLock } from '@/lib/supabase';
+import { supabase, getFreshAccessToken } from '@/lib/supabase';
 import { withTimeout } from '@/lib/timeout';
 import { useAuthStore } from '@/store/authStore';
 import type { Track } from '@/lib/database.types';
@@ -145,6 +145,7 @@ function UploadTrackCard() {
   const [uploading, setUploading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   // Mutex: prevent concurrent uploads that would fight over the auth lock
   const isUploadingRef = useRef(false);
 
@@ -179,16 +180,17 @@ function UploadTrackCard() {
     setError(null);
 
     try {
-      // Get the access token as a plain string and release the auth lock
-      // immediately.  Do NOT hold a Session object reference during the XHR
-      // upload — the autoRefreshToken background job competes for the same
-      // IndexedDB lock and will "steal" it, causing the upload to fail.
+      // Force-refresh the session token immediately before the upload so we
+      // are guaranteed to have a fresh, non-stale token.  Using refreshSession()
+      // instead of getSession() prevents the "lock was stolen" race condition
+      // where autoRefreshToken fires concurrently and invalidates the token we
+      // just read.
       let accessToken: string;
       try {
-        accessToken = await getAccessTokenNoLock(AUTH_SESSION_TIMEOUT_MS);
+        accessToken = await getFreshAccessToken(AUTH_SESSION_TIMEOUT_MS);
       } catch (tokenErr: unknown) {
         const tokenMessage = tokenErr instanceof Error ? tokenErr.message.toLowerCase() : '';
-        if (tokenMessage.includes(SESSION_ERROR_NO_ACTIVE) || tokenMessage.includes(SESSION_ERROR_SIGN_IN)) {
+        if (tokenMessage.includes(SESSION_ERROR_NO_ACTIVE) || tokenMessage.includes(SESSION_ERROR_SIGN_IN) || tokenMessage.includes('expired')) {
           setError('Session expired. Please sign out and sign in again.');
         } else {
           setError('Session check timed out. Close duplicate tabs and retry the upload.');
@@ -196,11 +198,44 @@ function UploadTrackCard() {
         return;
       }
 
+      /**
+       * Upload with automatic retry on auth failure (401/403).
+       * If the first attempt fails with an auth error, get a fresh token and
+       * retry once.  This handles edge cases where the token becomes stale
+       * between the refresh call and the actual XHR request.
+       */
+      async function uploadWithRetry(
+        bucket: string,
+        path: string,
+        file: File,
+        token: string,
+        onProgress: (pct: number) => void
+      ): Promise<void> {
+        try {
+          await uploadWithProgress(bucket, path, file, token, onProgress);
+        } catch (uploadErr: unknown) {
+          const errMsg = uploadErr instanceof Error ? uploadErr.message : '';
+          // Only retry on explicit HTTP 401/403 auth failures — use the
+          // specific status codes logged by uploadWithProgress rather than
+          // substring-matching on arbitrary error text.
+          const isAuthError = /HTTP (401|403)/.test(errMsg);
+          if (isAuthError) {
+            console.warn('[UPLOAD] Auth error on first attempt — refreshing token and retrying...');
+            setUploadStatus('Retrying upload...');
+            const freshToken = await getFreshAccessToken(AUTH_SESSION_TIMEOUT_MS);
+            await uploadWithProgress(bucket, path, file, freshToken, onProgress);
+            setUploadStatus(null);
+          } else {
+            throw uploadErr;
+          }
+        }
+      }
+
       const artistName = profile?.username || user.email?.split('@')[0] || 'Unknown Artist';
       const audioPath = `${user.id}/${Date.now()}_${audioFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
       console.log(`[UPLOAD] Uploading audio track: ${audioFile.name} (${(audioFile.size / 1024 / 1024).toFixed(2)} MB)`);
-      await uploadWithProgress(
+      await uploadWithRetry(
         TRACKS_BUCKET,
         audioPath,
         audioFile,
@@ -223,7 +258,7 @@ function UploadTrackCard() {
             : `${user.id}/${Date.now()}_${coverFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
         console.log(`[UPLOAD] Uploading cover art: ${coverFile.name}`);
-        await uploadWithProgress(
+        await uploadWithRetry(
           COVER_BUCKET,
           coverPath,
           coverFile,
@@ -298,6 +333,7 @@ function UploadTrackCard() {
     } finally {
       isUploadingRef.current = false;
       setUploading(false);
+      setUploadStatus(null);
     }
   }
 
@@ -366,6 +402,22 @@ function UploadTrackCard() {
           }}
         >
           {error}
+        </div>
+      )}
+
+      {uploadStatus && (
+        <div
+          style={{
+            backgroundColor: 'rgba(59,130,246,0.1)',
+            border: '1px solid rgba(59,130,246,0.3)',
+            borderRadius: 12,
+            padding: 12,
+            color: '#60A5FA',
+            fontSize: 14,
+            marginBottom: 16,
+          }}
+        >
+          {uploadStatus}
         </div>
       )}
 
