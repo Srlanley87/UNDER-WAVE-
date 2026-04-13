@@ -201,94 +201,102 @@ The app uses **two separate public buckets**:
 
 | Bucket name | Purpose |
 |-------------|---------|
-| `tracks` | Audio files (MP3, WAV, etc.) |
-| `covers` | Cover art images (JPG, PNG, WebP) |
+| `audio` | Audio files (MP3, WAV, etc.) |
+| `cover` | Cover art images (JPG, PNG, WebP) |
 
 ### Create both buckets
 
-Repeat these steps **twice** — once for `tracks` and once for `covers`:
+Repeat these steps **twice** — once for `audio` and once for `cover`:
 
 1. Supabase → **Storage** → **New Bucket**
-2. Name: `tracks` (first time) / `covers` (second time)
+2. Name: `audio` (first time) / `cover` (second time)
 3. Toggle **"Public bucket"** to **ON** (so audio/image URLs are playable without sign-in)
 4. Click **Save**
 
 ### Storage Policies (run in SQL Editor)
 
 ```sql
--- ============================================================
--- TRACKS bucket (audio files)
--- ============================================================
+-- 1) Create/ensure new buckets exist and are public-readable
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('audio', 'audio', true)
+ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;
 
--- Drop any old/conflicting policies first
-DROP POLICY IF EXISTS "tracks_storage_select"   ON storage.objects;
-DROP POLICY IF EXISTS "tracks_storage_insert"   ON storage.objects;
-DROP POLICY IF EXISTS "tracks_storage_update"   ON storage.objects;
-DROP POLICY IF EXISTS "tracks_storage_delete"   ON storage.objects;
-DROP POLICY IF EXISTS "Anyone can read tracks storage"              ON storage.objects;
-DROP POLICY IF EXISTS "Authenticated users can upload tracks"       ON storage.objects;
-DROP POLICY IF EXISTS "Users can update their own track files"      ON storage.objects;
-DROP POLICY IF EXISTS "Users can delete their own track files"      ON storage.objects;
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('cover', 'cover', true)
+ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;
 
--- Allow anyone to read/stream files from the tracks bucket
-CREATE POLICY "tracks_storage_select"
-  ON storage.objects FOR SELECT
-  USING (bucket_id = 'tracks');
+-- 2) Remove old/conflicting policies (safe if not present)
+DROP POLICY IF EXISTS "audio_select" ON storage.objects;
+DROP POLICY IF EXISTS "audio_insert" ON storage.objects;
+DROP POLICY IF EXISTS "audio_update_own" ON storage.objects;
+DROP POLICY IF EXISTS "audio_delete_own" ON storage.objects;
 
--- Allow authenticated users to upload files
-CREATE POLICY "tracks_storage_insert"
-  ON storage.objects FOR INSERT
-  TO authenticated
-  WITH CHECK (bucket_id = 'tracks');
+DROP POLICY IF EXISTS "cover_select" ON storage.objects;
+DROP POLICY IF EXISTS "cover_insert" ON storage.objects;
+DROP POLICY IF EXISTS "cover_update_own" ON storage.objects;
+DROP POLICY IF EXISTS "cover_delete_own" ON storage.objects;
 
--- Allow users to update their own files
-CREATE POLICY "tracks_storage_update"
-  ON storage.objects FOR UPDATE
-  TO authenticated
-  USING (bucket_id = 'tracks' AND (storage.foldername(name))[1] = auth.uid()::text);
-
--- Allow users to delete their own files
-CREATE POLICY "tracks_storage_delete"
-  ON storage.objects FOR DELETE
-  TO authenticated
-  USING (bucket_id = 'tracks' AND (storage.foldername(name))[1] = auth.uid()::text);
-
--- ============================================================
--- COVERS bucket (cover art images)
--- ============================================================
-
--- Drop any old/conflicting policies first
+-- optional cleanup of old-name policies
+DROP POLICY IF EXISTS "tracks_storage_select" ON storage.objects;
+DROP POLICY IF EXISTS "tracks_storage_insert" ON storage.objects;
+DROP POLICY IF EXISTS "tracks_storage_update" ON storage.objects;
+DROP POLICY IF EXISTS "tracks_storage_delete" ON storage.objects;
 DROP POLICY IF EXISTS "covers_storage_select" ON storage.objects;
 DROP POLICY IF EXISTS "covers_storage_insert" ON storage.objects;
 DROP POLICY IF EXISTS "covers_storage_update" ON storage.objects;
 DROP POLICY IF EXISTS "covers_storage_delete" ON storage.objects;
+DROP POLICY IF EXISTS "Anyone can read tracks storage" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated users can upload tracks" ON storage.objects;
+DROP POLICY IF EXISTS "Users can update their own track files" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete their own track files" ON storage.objects;
+DROP POLICY IF EXISTS "Anyone can read covers storage" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated users can upload covers" ON storage.objects;
+DROP POLICY IF EXISTS "Users can update their own cover files" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete their own cover files" ON storage.objects;
 
--- Allow anyone to read cover images
-CREATE POLICY "covers_storage_select"
-  ON storage.objects FOR SELECT
-  USING (bucket_id = 'covers');
+-- 3) AUDIO policies
+CREATE POLICY "audio_select"
+ON storage.objects FOR SELECT
+USING (bucket_id = 'audio');
 
--- Allow authenticated users to upload cover images
-CREATE POLICY "covers_storage_insert"
-  ON storage.objects FOR INSERT
-  TO authenticated
-  WITH CHECK (bucket_id = 'covers');
+CREATE POLICY "audio_insert"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (bucket_id = 'audio');
 
--- Allow users to update their own cover images
-CREATE POLICY "covers_storage_update"
-  ON storage.objects FOR UPDATE
-  TO authenticated
-  USING (bucket_id = 'covers' AND (storage.foldername(name))[1] = auth.uid()::text);
+CREATE POLICY "audio_update_own"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING (bucket_id = 'audio' AND (storage.foldername(name))[1] = auth.uid()::text);
 
--- Allow users to delete their own cover images
-CREATE POLICY "covers_storage_delete"
-  ON storage.objects FOR DELETE
-  TO authenticated
-  USING (bucket_id = 'covers' AND (storage.foldername(name))[1] = auth.uid()::text);
+CREATE POLICY "audio_delete_own"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (bucket_id = 'audio' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+-- 4) COVER policies
+CREATE POLICY "cover_select"
+ON storage.objects FOR SELECT
+USING (bucket_id = 'cover');
+
+CREATE POLICY "cover_insert"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (bucket_id = 'cover');
+
+CREATE POLICY "cover_update_own"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING (bucket_id = 'cover' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+CREATE POLICY "cover_delete_own"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (bucket_id = 'cover' AND (storage.foldername(name))[1] = auth.uid()::text);
 ```
 
-> ⚠️ **Important**: The app code expects exactly these bucket names (`tracks` and `covers`).  
-> Using any other name (e.g. `audio`, `images`) will cause uploads to stall.
+> ⚠️ **Important**: The app code now uploads audio to `audio` and cover art to `cover`.  
+> If you use different names, set `EXPO_PUBLIC_SUPABASE_COVER_BUCKET` or update the bucket constants in code.
 
 ---
 
@@ -334,7 +342,7 @@ After completing all steps above:
 
 | Error | Fix |
 |-------|-----|
-| Upload stuck at 10% / "Bucket not found" | Create the `tracks` bucket in Supabase Storage (step 6) |
+| Upload stuck at 10% / "Bucket not found" | Create the `audio` and `cover` buckets in Supabase Storage (step 6) |
 | Upload blocked by policy | Add storage INSERT policy for authenticated users (step 6) |
 | "Email not confirmed" on sign-in | Disable email confirmation in Supabase Auth settings (step 2) |
 | Blank page after Google auth | Set correct redirect URLs in Supabase URL Configuration (step 3) |
