@@ -10,10 +10,10 @@ import GlassCard from '@/components/ui/GlassCard';
 import { Ionicons } from '@expo/vector-icons';
 
 const GENRES = ['Hip-Hop', 'Electronic', 'Lo-Fi', 'Indie', 'R&B', 'Afrobeats'];
-const TRACKS_BUCKET = 'tracks';
-// Cover art lives in a dedicated "covers" bucket.  Set EXPO_PUBLIC_SUPABASE_COVER_BUCKET
-// to override (e.g. if you renamed the bucket), otherwise the default is "covers".
-const COVER_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_COVER_BUCKET || 'covers';
+const TRACKS_BUCKET = 'audio';
+// Cover art lives in a dedicated "cover" bucket. Set EXPO_PUBLIC_SUPABASE_COVER_BUCKET
+// to override (e.g. if you renamed the bucket), otherwise the default is "cover".
+const COVER_BUCKET = process.env.EXPO_PUBLIC_SUPABASE_COVER_BUCKET || 'cover';
 const AUTH_SESSION_TIMEOUT_MS = 15000;
 const STORAGE_UPLOAD_TIMEOUT_MS = 300000; // 5 minutes
 const DB_TIMEOUT_MS = 45000;
