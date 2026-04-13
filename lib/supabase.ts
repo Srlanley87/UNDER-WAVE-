@@ -40,3 +40,27 @@ export async function getAccessTokenNoLock(timeoutMs = 15000): Promise<string> {
   // Session object so the lock is freed as soon as this function returns.
   return data.session.access_token;
 }
+
+/**
+ * Force-refresh the session and return a guaranteed-fresh access token.
+ * Use this immediately before an upload so the token is never stale.
+ * Calling refreshSession() obtains new tokens from Supabase and releases
+ * the auth lock, so the XHR upload does not contend with autoRefreshToken.
+ */
+export async function getFreshAccessToken(timeoutMs = 15000): Promise<string> {
+  try {
+    const { data, error } = await withTimeout(
+      supabase.auth.refreshSession(),
+      timeoutMs,
+      'Timed out while refreshing your auth session. Close duplicate app tabs and sign in again.'
+    );
+    if (error || !data.session?.access_token) {
+      throw new Error('Failed to refresh session: ' + (error?.message ?? 'Unknown error'));
+    }
+    // Return only the token string so the auth lock is freed immediately.
+    return data.session.access_token;
+  } catch (err) {
+    console.error('[AUTH] Token refresh failed:', err);
+    throw new Error('Authentication expired. Please sign in again.');
+  }
+}
