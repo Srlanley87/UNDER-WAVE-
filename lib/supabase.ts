@@ -1,35 +1,82 @@
 import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import type { Database } from '@/lib/database.types';
 import { withTimeout } from '@/lib/timeout';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
-const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
 
 /**
- * Explicit localStorage adapter for web environments.
- * Passing `undefined` as the storage option causes Supabase to use its
- * internal fallback which can fail silently on Vercel (Expo Web), making
- * the session disappear on page refresh.  Using browser localStorage
- * directly guarantees the session persists across refreshes.
+ * True only when executing in a real browser context.
+ * During `expo export --platform web` (Vercel build / SSR), `window` is
+ * undefined, so this is false and we skip all browser-API access.
  */
-const webLocalStorage = isWeb
-  ? {
-      getItem: (key: string) => Promise.resolve(window.localStorage.getItem(key)),
-      setItem: (key: string, value: string) => Promise.resolve(window.localStorage.setItem(key, value)),
-      removeItem: (key: string) => Promise.resolve(window.localStorage.removeItem(key)),
-    }
-  : undefined;
+const isClientSide = typeof window !== 'undefined';
+const isWeb = Platform.OS === 'web' && isClientSide;
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    storage: isWeb ? webLocalStorage : AsyncStorage,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: isWeb,
+let _client: ReturnType<typeof createClient<Database>> | null = null;
+
+/**
+ * Returns the Supabase client, creating it lazily on first use.
+ * Returns null during SSR so that server-side rendering never touches
+ * browser APIs (localStorage, AsyncStorage → window …).
+ *
+ * AsyncStorage is loaded via a dynamic require so that the module
+ * initialisation of @react-native-async-storage/async-storage — which
+ * accesses `window` — is never executed during the Vercel build/SSR pass.
+ */
+function getClient(): ReturnType<typeof createClient<Database>> | null {
+  if (!isClientSide) return null;
+  if (_client) return _client;
+
+  /**
+   * Explicit localStorage adapter for web environments.
+   * Passing `undefined` causes Supabase to use its internal fallback which
+   * can fail silently on Vercel (Expo Web), making the session disappear on
+   * page refresh.  Using browser localStorage directly guarantees the
+   * session persists across refreshes.
+   */
+  const storage = isWeb
+    ? {
+        getItem: (key: string) => Promise.resolve(window.localStorage.getItem(key)),
+        setItem: (key: string, value: string) =>
+          Promise.resolve(window.localStorage.setItem(key, value)),
+        removeItem: (key: string) =>
+          Promise.resolve(window.localStorage.removeItem(key)),
+      }
+    : // eslint-disable-next-line @typescript-eslint/no-require-imports
+      (require('@react-native-async-storage/async-storage').default as typeof import('@react-native-async-storage/async-storage').default);
+
+  _client = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      storage,
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: isWeb,
+    },
+  });
+
+  return _client;
+}
+
+/**
+ * Supabase client proxy.
+ *
+ * A Proxy maintains full backward compatibility with all existing call
+ * sites (`supabase.auth.*`, `supabase.storage.*`, etc.) while deferring
+ * client creation until first use on the client side.  During SSR the
+ * proxy throws a clear error if any code path erroneously accesses it.
+ */
+export const supabase = new Proxy({} as ReturnType<typeof createClient<Database>>, {
+  get(_target, prop) {
+    const client = getClient();
+    if (!client) {
+      throw new Error(
+        `Supabase is not available during server-side rendering (property: ${String(prop)})`
+      );
+    }
+    return (client as Record<string, unknown>)[prop as string];
   },
 });
 
