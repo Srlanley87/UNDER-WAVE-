@@ -44,6 +44,7 @@ type FeedTrack = {
   coverUrl: string | null
 }
 type DiscoveryTrack = FeedTrack & { genre: string | null }
+const EMPTY_PROFILE: ProfileRow = { display_name: null, avatar_url: null, bio: null }
 
 const GENRES = ['Hip-Hop', 'Electronic', 'Lo-Fi', 'Indie', 'R&B', 'Afrobeats']
 const AUDIO_BUCKET = 'audio'
@@ -249,7 +250,7 @@ function App() {
   const [recentTrackIds, setRecentTrackIds] = useState<string[]>([])
   const [playlists, setPlaylists] = useState<PlaylistRow[]>([])
 
-  const [profile, setProfile] = useState<ProfileRow>({ display_name: null, avatar_url: null, bio: null })
+  const [profile, setProfile] = useState<ProfileRow>(EMPTY_PROFILE)
   const [displayNameDraft, setDisplayNameDraft] = useState('')
   const [bioDraft, setBioDraft] = useState('')
   const [profileMessage, setProfileMessage] = useState<string | null>(null)
@@ -263,6 +264,7 @@ function App() {
   const [commentSubmitting, setCommentSubmitting] = useState(false)
   const [dataMessage, setDataMessage] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const nextTrackRef = useRef<(() => void) | null>(null)
   const lastPlayEventTrackIdRef = useRef<string | null>(null)
 
   const {
@@ -428,6 +430,10 @@ function App() {
   const currentTrackId = currentTrack?.id ?? null
 
   useEffect(() => {
+    nextTrackRef.current = nextTrack
+  }, [nextTrack])
+
+  useEffect(() => {
     if (!sessionUserId || !currentTrackId) {
       setComments([])
       return
@@ -488,7 +494,7 @@ function App() {
     }
 
     const handleEnded = () => {
-      nextTrack()
+      nextTrackRef.current?.()
     }
 
     audio.addEventListener('timeupdate', handleTimeUpdate)
@@ -500,7 +506,7 @@ function App() {
       audio.removeEventListener('ended', handleEnded)
       audioRef.current = null
     }
-  }, [nextTrack])
+  }, [])
 
   useEffect(() => {
     const audio = audioRef.current
@@ -725,7 +731,7 @@ function App() {
     setCommentSubmitting(false)
   }
 
-  const handleSaveDisplayName = async () => {
+  const handleSaveProfile = async () => {
     if (!sessionUserId) return
 
     const { error } = await supabase.from('profiles').upsert(
@@ -1113,16 +1119,19 @@ function App() {
                 value={displayNameDraft}
                 onChange={(event) => setDisplayNameDraft(event.target.value)}
               />
-              <PremiumButton className="primaryButton" onClick={handleSaveDisplayName}>
+              <PremiumButton className="primaryButton" onClick={handleSaveProfile}>
                 Save Profile
               </PremiumButton>
-              <textarea
-                className="premiumInput"
-                placeholder="Custom bio"
-                rows={3}
-                value={bioDraft}
-                onChange={(event) => setBioDraft(event.target.value)}
-              />
+              <label className="fileField">
+                <span>Custom Bio</span>
+                <textarea
+                  className="premiumInput"
+                  placeholder="Tell listeners about you"
+                  rows={3}
+                  value={bioDraft}
+                  onChange={(event) => setBioDraft(event.target.value)}
+                />
+              </label>
 
               <label className="fileField">
                 <span>Profile Picture</span>

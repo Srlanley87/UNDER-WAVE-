@@ -73,7 +73,7 @@ const navItems: Array<{ id: AppTab; label: string; icon: typeof House }> = [
   { id: 'upload', label: 'Upload', icon: CirclePlus },
   { id: 'profile', label: 'Profile', icon: UserRound },
 ]
-const RADIO_WAVE_BARS = Array.from({ length: 20 }, (_, index) => index)
+const RADIO_WAVE_BAR_INDICES = Array.from({ length: 20 }, (_, i) => i)
 
 function WaveLogo() {
   return (
@@ -247,7 +247,7 @@ export function AppLayout({
                   <motion.div layoutId="player-cover" className="heroCover coverFallback">♪</motion.div>
                 )}
                 <div className={`radioWaveOverlay ${isPlaying ? 'active' : ''}`} aria-hidden="true">
-                  {RADIO_WAVE_BARS.map((index) => (
+                  {RADIO_WAVE_BAR_INDICES.map((index) => (
                     <span key={index} style={{ animationDelay: `${(index % 5) * 0.12}s` }} />
                   ))}
                 </div>
