@@ -24,6 +24,8 @@ type PlayerStore = {
   toggleRepeat: () => void
 }
 
+const MAX_SHUFFLE_ATTEMPTS = 12
+
 function findCurrentIndex(queue: PlayerTrack[], trackId: string | null) {
   if (!trackId) return -1
   return queue.findIndex((track) => track.id === trackId)
@@ -63,7 +65,19 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     }
 
     if (state.isShuffle) {
-      const randomIndex = Math.floor(Math.random() * state.queue.length)
+      if (state.queue.length === 1) {
+        set({ currentTrack: state.queue[0], isPlaying: true })
+        return
+      }
+      let randomIndex = Math.floor(Math.random() * state.queue.length)
+      let attempts = 0
+      while (randomIndex === currentIndex && attempts < MAX_SHUFFLE_ATTEMPTS) {
+        randomIndex = Math.floor(Math.random() * state.queue.length)
+        attempts += 1
+      }
+      if (randomIndex === currentIndex) {
+        randomIndex = (currentIndex + 1) % state.queue.length
+      }
       set({ currentTrack: state.queue[randomIndex], isPlaying: true })
       return
     }

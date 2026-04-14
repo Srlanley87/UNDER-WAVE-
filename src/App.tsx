@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Search } from 'lucide-react'
 import './index.css'
@@ -42,6 +42,7 @@ type FeedTrack = {
   artist: string
   coverUrl: string | null
 }
+type DiscoveryTrack = FeedTrack & { genre: string | null }
 
 const GENRES = ['Hip-Hop', 'Electronic', 'Lo-Fi', 'Indie', 'R&B', 'Afrobeats']
 const AUDIO_BUCKET = 'audio'
@@ -104,6 +105,20 @@ function safeFileName(fileName: string) {
   return fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
 }
 
+function createTempId(prefix: string) {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID()}`
+  }
+  return `${prefix}-${Date.now()}-${Math.round(Math.random() * 1_000_000)}`
+}
+
+function getUserDisplayName(displayName: string | null | undefined, email: string | null | undefined, fallback = 'Listener') {
+  const trimmedDisplay = (displayName || '').trim()
+  if (trimmedDisplay) return trimmedDisplay
+  const emailName = (email || '').trim().split('@')[0]?.trim()
+  return emailName || fallback
+}
+
 function toPlayerTrack(track: TrackRow): PlayerTrack {
   return {
     id: track.id,
@@ -118,11 +133,11 @@ function toPlayerTrack(track: TrackRow): PlayerTrack {
 function isMissingTableError(error: { code?: string; message?: string } | null, tableName: string) {
   if (!error) return false
   if (error.code === '42P01') return true
-  return (error.message || '').toLowerCase().includes(`relation \"${tableName}\"`)
+  return (error.message || '').toLowerCase().includes(`relation "${tableName}"`)
 }
 
 function getTableSqlMessage(table: keyof typeof REQUIRED_TABLE_SQL) {
-  return `Missing required table \"${table}\". Run this SQL in Supabase:\n${REQUIRED_TABLE_SQL[table]}`
+  return `Missing required table "${table}". Run this SQL in Supabase:\n${REQUIRED_TABLE_SQL[table]}`
 }
 
 function UnderwaveLogo() {
@@ -232,7 +247,7 @@ function App() {
     }
   }, [])
 
-  const refreshTracks = async (userId: string) => {
+  const refreshTracks = useCallback(async (userId: string) => {
     const { data, error } = await supabase
       .from('tracks')
       .select('id,title,artist,genre,play_count,like_count,cover_url,audio_url,user_id,created_at')
@@ -251,12 +266,8 @@ function App() {
     const playerQueue = rows.map(toPlayerTrack)
     if (playerQueue.length > 0) {
       setQueue(playerQueue)
-      if (!currentTrack) {
-        playTrack(playerQueue[0], playerQueue)
-        togglePlay()
-      }
     }
-  }
+  }, [setQueue])
 
   const refreshLikes = async (userId: string) => {
     const { data, error } = await supabase.from('likes').select('track_id').eq('user_id', userId)
@@ -346,10 +357,12 @@ function App() {
       refreshPlaylists(sessionUserId),
       refreshProfile(sessionUserId),
     ])
-  }, [sessionUserId])
+  }, [sessionUserId, refreshTracks])
+
+  const currentTrackId = currentTrack?.id ?? null
 
   useEffect(() => {
-    if (!sessionUserId || !currentTrack) {
+    if (!sessionUserId || !currentTrackId) {
       setComments([])
       return
     }
@@ -358,7 +371,7 @@ function App() {
       const { data, error } = await supabase
         .from('comments')
         .select('id,user_id,body')
-        .eq('track_id', currentTrack.id)
+        .eq('track_id', currentTrackId)
         .order('created_at', { ascending: false })
         .limit(50)
 
@@ -378,7 +391,8 @@ function App() {
         : { data: [] }
 
       const profileMap = new Map<string, string>()
-      ;((profilesData as Array<{ id: string; display_name: string | null }>) || []).forEach((item) => {
+      const profileRows = (profilesData as Array<{ id: string; display_name: string | null }>) || []
+      profileRows.forEach((item) => {
         profileMap.set(item.id, item.display_name || 'Listener')
       })
 
@@ -392,7 +406,7 @@ function App() {
     }
 
     void loadComments()
-  }, [sessionUserId, currentTrack?.id])
+  }, [sessionUserId, currentTrackId])
 
   const handleAuth = async () => {
     if (!email.trim() || !password) {
@@ -487,7 +501,7 @@ function App() {
         coverUrl = coverPublic.publicUrl
       }
 
-      const artistName = (displayNameDraft.trim() || sessionEmail.trim() || email.trim()).split('@')[0]?.trim() || 'Unknown Artist'
+      const artistName = getUserDisplayName(profile.display_name, sessionEmail.trim() || email.trim(), 'Unknown Artist')
 
       const { error: insertError } = await supabase.from('tracks').insert({
         user_id: sessionUserId,
@@ -560,8 +574,8 @@ function App() {
       setDataMessage(error.message)
     } else {
       setCommentDraft('')
-      const profileName = displayNameDraft.trim() || sessionEmail.split('@')[0] || 'You'
-      setComments((prev) => [{ id: `local-${Date.now()}`, author: profileName, body: commentDraft.trim() }, ...prev])
+      const profileName = getUserDisplayName(profile.display_name ?? '', sessionEmail, 'You')
+      setComments((prev) => [{ id: createTempId('temp-comment'), author: profileName, body: commentDraft.trim() }, ...prev])
     }
 
     setCommentSubmitting(false)
@@ -657,11 +671,15 @@ function App() {
       return
     }
 
-    await navigator.clipboard.writeText(shareText)
-    setDataMessage('Track details copied to clipboard.')
+    try {
+      await navigator.clipboard.writeText(shareText)
+      setDataMessage('Track details copied to clipboard.')
+    } catch {
+      setDataMessage('Unable to copy track details.')
+    }
   }
 
-  const discoveryTracks = useMemo(() => {
+  const discoveryTracks = useMemo<DiscoveryTrack[]>(() => {
     return allTracks.map((track) => ({
       id: track.id,
       title: track.title,
@@ -672,12 +690,16 @@ function App() {
   }, [allTracks])
 
   const jumpBackIn = useMemo<FeedTrack[]>(() => {
-    const map = new Map(discoveryTracks.map((track) => [track.id, track]))
-    return recentTrackIds.map((id) => map.get(id)).filter((item): item is (typeof discoveryTracks)[number] => Boolean(item)).slice(0, 8)
+    const trackMap = new Map(discoveryTracks.map((track) => [track.id, track]))
+    const recentTracks = recentTrackIds
+      .map((id) => trackMap.get(id))
+      .filter((item): item is DiscoveryTrack => Boolean(item))
+    return recentTracks.slice(0, 8)
   }, [recentTrackIds, discoveryTracks])
 
   const moreOfWhatYouLike = useMemo<FeedTrack[]>(() => {
-    const seed = discoveryTracks.filter((track) => likedTrackIds.has(track.id) || recentTrackIds.includes(track.id))
+    const recentTrackIdSet = new Set(recentTrackIds)
+    const seed = discoveryTracks.filter((track) => likedTrackIds.has(track.id) || recentTrackIdSet.has(track.id))
 
     const genreScores = new Map<string, number>()
     const artistScores = new Map<string, number>()
@@ -687,20 +709,25 @@ function App() {
     })
 
     return discoveryTracks
-      .filter((track) => !recentTrackIds.includes(track.id))
+      .filter((track) => !recentTrackIdSet.has(track.id))
       .map((track) => ({
         ...track,
         score: (track.genre ? genreScores.get(track.genre) || 0 : 0) + (artistScores.get(track.artist) || 0),
       }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 10)
-      .map(({ score: _score, ...track }) => track)
+      .map((track) => ({
+        id: track.id,
+        title: track.title,
+        artist: track.artist,
+        coverUrl: track.coverUrl,
+      }))
   }, [discoveryTracks, likedTrackIds, recentTrackIds])
 
   const likedSongs = useMemo(() => discoveryTracks.filter((track) => likedTrackIds.has(track.id)), [discoveryTracks, likedTrackIds])
   const recentSongs = useMemo(() => {
     const map = new Map(discoveryTracks.map((track) => [track.id, track]))
-    return recentTrackIds.map((id) => map.get(id)).filter((item): item is (typeof discoveryTracks)[number] => Boolean(item))
+    return recentTrackIds.map((id) => map.get(id)).filter((item): item is DiscoveryTrack => Boolean(item))
   }, [recentTrackIds, discoveryTracks])
 
   if (loadingSession) {
@@ -914,7 +941,7 @@ function App() {
             <div className="profileHeader">
               {profile.avatar_url ? <img src={profile.avatar_url} alt="profile avatar" /> : <div className="avatarFallback">U</div>}
               <div className="profileMeta">
-                <strong>{displayNameDraft || 'UNDERWAVE Listener'}</strong>
+                <strong>{getUserDisplayName(displayNameDraft, sessionEmail, 'UNDERWAVE Listener')}</strong>
                 <small>{sessionEmail}</small>
                 <div className="profileCounts">
                   <span>{followersCount} Followers</span>

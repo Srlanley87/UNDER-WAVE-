@@ -10,6 +10,8 @@
   --gold: #ffb800;
   --gold-2: #f59e0b;
   --gold-shadow: rgba(255, 184, 0, 0.3);
+  --gold-focus-border: rgba(255, 184, 0, 0.75);
+  --gold-focus-ring: rgba(255, 184, 0, 0.25);
 }
 
 * {
@@ -357,8 +359,8 @@ input::placeholder {
 input:focus,
 select:focus {
   outline: none;
-  border-color: rgba(255, 184, 0, 0.75);
-  box-shadow: 0 0 0 2px rgba(255, 184, 0, 0.25);
+  border-color: var(--gold-focus-border);
+  box-shadow: 0 0 0 2px var(--gold-focus-ring);
   background: rgba(255, 255, 255, 0.075);
 }
 
@@ -413,8 +415,8 @@ input:focus::placeholder {
   position: absolute;
   width: 10px;
   height: 6px;
-  border-left: 2px solid #09090b;
-  border-bottom: 2px solid #09090b;
+  border-left: 2px solid var(--ash-1);
+  border-bottom: 2px solid var(--ash-1);
   transform: rotate(-45deg) translate(1px, -1px);
 }
 
@@ -637,7 +639,7 @@ input[type='file'] {
   width: 16px;
   height: 16px;
   border-radius: 999px;
-  border: 2px solid #111116;
+  border: 2px solid var(--ash-2);
   background: var(--gold);
   box-shadow: 0 6px 16px rgba(255, 184, 0, 0.35);
 }
@@ -646,7 +648,7 @@ input[type='file'] {
   width: 16px;
   height: 16px;
   border-radius: 999px;
-  border: 2px solid #111116;
+  border: 2px solid var(--ash-2);
   background: var(--gold);
   box-shadow: 0 6px 16px rgba(255, 184, 0, 0.35);
 }

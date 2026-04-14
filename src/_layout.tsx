@@ -339,7 +339,14 @@ export function AppLayout({
             <AnimatePresence>
               {sheetOpen && (
                 <>
-                  <motion.button className="sheetBackdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSheetOpen(false)} />
+                  <motion.button
+                    className="sheetBackdrop"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    onClick={() => setSheetOpen(false)}
+                    aria-label="Close menu"
+                  />
                   <motion.section className="bottomSheet glassPanel" initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 100, opacity: 0 }}>
                     <PremiumButton className="sheetButton" onClick={onViewArtistProfile}>
                       View Artist Profile
