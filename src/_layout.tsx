@@ -1,7 +1,8 @@
-import { type ReactNode, useMemo, useState } from 'react'
+import { type ReactNode, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   CirclePlus,
+  Ellipsis,
   Heart,
   House,
   Library,
@@ -9,18 +10,32 @@ import {
   Pause,
   Play,
   Search,
-  Share2,
+  Shuffle,
+  SkipBack,
+  SkipForward,
   UserRound,
-  ListPlus,
   Repeat,
+  X,
 } from 'lucide-react'
 
 export type AppTab = 'home' | 'search' | 'library' | 'upload' | 'profile'
 
 type CurrentTrack = {
+  id: string
   title: string
   artist: string
   coverUrl: string | null
+}
+
+type PlaylistItem = {
+  id: string
+  name: string
+}
+
+type PlayerComment = {
+  id: string
+  author: string
+  body: string
 }
 
 type AppLayoutProps = {
@@ -29,8 +44,25 @@ type AppLayoutProps = {
   currentTrack: CurrentTrack | null
   isPlaying: boolean
   isLiked: boolean
+  isShuffle: boolean
+  isRepeat: boolean
+  progress: number
+  onSeek: (value: number) => void
   onTogglePlay: () => void
+  onPrev: () => void
+  onNext: () => void
   onToggleLike: () => void
+  onToggleShuffle: () => void
+  onToggleRepeat: () => void
+  comments: PlayerComment[]
+  commentDraft: string
+  onCommentDraftChange: (value: string) => void
+  onSubmitComment: () => void
+  submittingComment: boolean
+  playlists: PlaylistItem[]
+  onAddCurrentTrackToPlaylist: (playlistId: string) => void
+  onViewArtistProfile: () => void
+  onShareTrack: () => void
   children: ReactNode
 }
 
@@ -41,8 +73,6 @@ const navItems: Array<{ id: AppTab; label: string; icon: typeof House }> = [
   { id: 'upload', label: 'Upload', icon: CirclePlus },
   { id: 'profile', label: 'Profile', icon: UserRound },
 ]
-
-const SIMULATED_WAVEFORM_BAR_HEIGHTS = [14, 24, 18, 40, 28, 22, 46, 18, 34, 26, 42, 16, 30, 36, 21, 44]
 
 function WaveLogo() {
   return (
@@ -72,8 +102,8 @@ function PremiumButton({
 }) {
   return (
     <motion.button
-      whileTap={{ scale: 0.97 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 24 }}
+      whileTap={{ scale: 0.96 }}
+      transition={{ type: 'spring', stiffness: 420, damping: 24 }}
       onClick={onClick}
       className={className}
       type={type}
@@ -90,14 +120,30 @@ export function AppLayout({
   currentTrack,
   isPlaying,
   isLiked,
+  isShuffle,
+  isRepeat,
+  progress,
+  onSeek,
   onTogglePlay,
+  onPrev,
+  onNext,
   onToggleLike,
+  onToggleShuffle,
+  onToggleRepeat,
+  comments,
+  commentDraft,
+  onCommentDraftChange,
+  onSubmitComment,
+  submittingComment,
+  playlists,
+  onAddCurrentTrackToPlaylist,
+  onViewArtistProfile,
+  onShareTrack,
   children,
 }: AppLayoutProps) {
   const [fullPlayerOpen, setFullPlayerOpen] = useState(false)
-  const [progress, setProgress] = useState(26)
-
-  const waveformBars = useMemo(() => SIMULATED_WAVEFORM_BAR_HEIGHTS, [])
+  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
 
   return (
     <main className="appShell">
@@ -116,10 +162,10 @@ export function AppLayout({
         <AnimatePresence mode="wait">
           <motion.section
             key={activeTab}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.24 }}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.2 }}
             className="viewSection"
           >
             {children}
@@ -128,12 +174,12 @@ export function AppLayout({
       </div>
 
       {currentTrack && (
-        <motion.div className="miniPlayer glassPanel" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
+        <motion.div layoutId="player-shell" className="miniPlayer glassPanel" initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
           <button className="miniTrack" onClick={() => setFullPlayerOpen(true)} type="button">
             {currentTrack.coverUrl ? (
-              <img src={currentTrack.coverUrl} alt={`${currentTrack.title} cover`} />
+              <motion.img layoutId="player-cover" src={currentTrack.coverUrl} alt={`${currentTrack.title} cover`} />
             ) : (
-              <div className="coverFallback">♪</div>
+              <motion.div layoutId="player-cover" className="coverFallback">♪</motion.div>
             )}
             <span>
               <strong>{currentTrack.title}</strong>
@@ -144,8 +190,14 @@ export function AppLayout({
             <PremiumButton className={`iconButton ${isLiked ? 'active' : ''}`} onClick={onToggleLike}>
               <Heart strokeWidth={2.5} size={19} fill={isLiked ? 'currentColor' : 'none'} />
             </PremiumButton>
+            <PremiumButton className="iconButton" onClick={onPrev}>
+              <SkipBack strokeWidth={2.5} size={18} />
+            </PremiumButton>
             <PremiumButton className="playButton" onClick={onTogglePlay}>
-              {isPlaying ? <Pause strokeWidth={2.5} size={19} /> : <Play strokeWidth={2.5} size={19} />}
+              {isPlaying ? <Pause strokeWidth={2.5} size={20} /> : <Play strokeWidth={2.5} size={20} />}
+            </PremiumButton>
+            <PremiumButton className="iconButton" onClick={onNext}>
+              <SkipForward strokeWidth={2.5} size={18} />
             </PremiumButton>
           </div>
         </motion.div>
@@ -156,11 +208,7 @@ export function AppLayout({
           const Icon = item.icon
           const active = item.id === activeTab
           return (
-            <PremiumButton
-              key={item.id}
-              className={`navItem ${active ? 'active' : ''}`}
-              onClick={() => onTabChange(item.id)}
-            >
+            <PremiumButton key={item.id} className={`navItem ${active ? 'active' : ''}`} onClick={() => onTabChange(item.id)}>
               <Icon strokeWidth={2.5} size={21} />
               <span>{item.label}</span>
             </PremiumButton>
@@ -170,73 +218,158 @@ export function AppLayout({
 
       <AnimatePresence>
         {fullPlayerOpen && currentTrack && (
-          <motion.div
-            className="playerOverlay"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setFullPlayerOpen(false)}
-          >
-            <motion.div
-              className="fullPlayer glassPanel"
-              initial={{ y: 40, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 40, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 210, damping: 26 }}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="heroCoverWrap">
+          <motion.div className="playerOverlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <motion.div layoutId="player-shell" className="fullPlayer glassPanel" transition={{ type: 'spring', stiffness: 210, damping: 25 }}>
+              <div className="fullPlayerTopBar">
+                <PremiumButton className="iconButton" onClick={() => setFullPlayerOpen(false)}>
+                  <X size={18} strokeWidth={2.5} />
+                </PremiumButton>
+                <div>
+                  <small>Now Playing</small>
+                </div>
+                <PremiumButton className="iconButton" onClick={() => setSheetOpen(true)}>
+                  <Ellipsis size={18} strokeWidth={2.5} />
+                </PremiumButton>
+              </div>
+
+              <div className={`heroCoverWrap ${isPlaying ? 'playingGlow' : ''}`}>
                 {currentTrack.coverUrl ? (
-                  <img
+                  <motion.img
+                    layoutId="player-cover"
                     src={currentTrack.coverUrl}
                     alt={`${currentTrack.title} artwork`}
-                    className={isPlaying ? 'heroCover spinning' : 'heroCover'}
+                    className="heroCover"
+                    animate={isPlaying ? { scale: [1, 1.03, 1] } : { scale: 1 }}
+                    transition={{ duration: 4, repeat: isPlaying ? Infinity : 0, ease: 'easeInOut' }}
                   />
                 ) : (
-                  <div className="heroCover coverFallback">♪</div>
+                  <motion.div layoutId="player-cover" className="heroCover coverFallback">♪</motion.div>
                 )}
+                <div className="heroGlass" />
               </div>
-              <h2>{currentTrack.title}</h2>
-              <p>{currentTrack.artist}</p>
 
-              <div className="waveformWrap">
-                <div className="waveform" aria-hidden="true">
-                  {waveformBars.map((bar, index) => (
-                    <div
-                      key={`waveform-bar-${index}`}
-                      style={{ height: `${bar}px` }}
-                      className={index < Math.round((progress / 100) * waveformBars.length) ? 'filled' : ''}
-                    />
-                  ))}
-                </div>
+              <div className="playerMeta">
+                <h2>{currentTrack.title}</h2>
+                <p>{currentTrack.artist}</p>
+              </div>
+
+              <div className="progressWrap">
                 <input
+                  className="premiumRange"
                   type="range"
                   min={0}
                   max={100}
                   value={progress}
-                  onChange={(event) => setProgress(Number(event.target.value))}
+                  onChange={(event) => onSeek(Number(event.target.value))}
                   aria-label="Track progress"
                 />
+              </div>
+
+              <div className="controlDeck">
+                <PremiumButton className={`iconButton bigIcon ${isShuffle ? 'active' : ''}`} onClick={onToggleShuffle}>
+                  <Shuffle size={20} strokeWidth={2.5} />
+                </PremiumButton>
+                <PremiumButton className="iconButton bigIcon" onClick={onPrev}>
+                  <SkipBack size={22} strokeWidth={2.5} />
+                </PremiumButton>
+                <motion.button
+                  className="heroPlayButton"
+                  whileTap={{ scale: 0.92 }}
+                  onClick={onTogglePlay}
+                  type="button"
+                  aria-label={isPlaying ? 'Pause' : 'Play'}
+                >
+                  {isPlaying ? <Pause size={28} strokeWidth={2.8} /> : <Play size={28} strokeWidth={2.8} />}
+                </motion.button>
+                <PremiumButton className="iconButton bigIcon" onClick={onNext}>
+                  <SkipForward size={22} strokeWidth={2.5} />
+                </PremiumButton>
+                <PremiumButton className={`iconButton bigIcon ${isRepeat ? 'active' : ''}`} onClick={onToggleRepeat}>
+                  <Repeat size={20} strokeWidth={2.5} />
+                </PremiumButton>
               </div>
 
               <div className="playerControls">
                 <PremiumButton className={`iconButton ${isLiked ? 'active' : ''}`} onClick={onToggleLike}>
                   <Heart strokeWidth={2.5} size={20} fill={isLiked ? 'currentColor' : 'none'} />
                 </PremiumButton>
-                <PremiumButton className="iconButton">
+                <PremiumButton className="iconButton" onClick={() => setCommentsOpen((value) => !value)}>
                   <MessageCircle strokeWidth={2.5} size={20} />
                 </PremiumButton>
-                <PremiumButton className="iconButton">
-                  <Repeat strokeWidth={2.5} size={20} />
-                </PremiumButton>
-                <PremiumButton className="iconButton">
-                  <Share2 strokeWidth={2.5} size={20} />
-                </PremiumButton>
-                <PremiumButton className="iconButton">
-                  <ListPlus strokeWidth={2.5} size={20} />
-                </PremiumButton>
               </div>
+
+              <AnimatePresence>
+                {commentsOpen && (
+                  <motion.section
+                    className="commentsOverlay glassPanel"
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: 20, opacity: 0 }}
+                  >
+                    <header>
+                      <strong>Comments</strong>
+                    </header>
+                    <div className="commentsList">
+                      {comments.length === 0 ? (
+                        <p className="muted">No comments yet.</p>
+                      ) : (
+                        comments.map((comment) => (
+                          <article key={comment.id}>
+                            <strong>{comment.author}</strong>
+                            <p>{comment.body}</p>
+                          </article>
+                        ))
+                      )}
+                    </div>
+                    <div className="commentComposer">
+                      <input
+                        value={commentDraft}
+                        onChange={(event) => onCommentDraftChange(event.target.value)}
+                        placeholder="Drop a comment"
+                      />
+                      <PremiumButton className="primaryButton" onClick={onSubmitComment} disabled={submittingComment}>
+                        {submittingComment ? 'Posting...' : 'Post'}
+                      </PremiumButton>
+                    </div>
+                  </motion.section>
+                )}
+              </AnimatePresence>
             </motion.div>
+
+            <AnimatePresence>
+              {sheetOpen && (
+                <>
+                  <motion.button className="sheetBackdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSheetOpen(false)} />
+                  <motion.section className="bottomSheet glassPanel" initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 100, opacity: 0 }}>
+                    <PremiumButton className="sheetButton" onClick={onViewArtistProfile}>
+                      View Artist Profile
+                    </PremiumButton>
+                    <PremiumButton className="sheetButton" onClick={onShareTrack}>
+                      Repost / Share
+                    </PremiumButton>
+                    <div className="sheetPlaylistGroup">
+                      <strong>Add to Playlist</strong>
+                      {playlists.length === 0 ? (
+                        <p className="muted">No playlists yet.</p>
+                      ) : (
+                        playlists.map((playlist) => (
+                          <PremiumButton
+                            key={playlist.id}
+                            className="sheetButton"
+                            onClick={() => {
+                              onAddCurrentTrackToPlaylist(playlist.id)
+                              setSheetOpen(false)
+                            }}
+                          >
+                            {playlist.name}
+                          </PremiumButton>
+                        ))
+                      )}
+                    </div>
+                  </motion.section>
+                </>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
       </AnimatePresence>
