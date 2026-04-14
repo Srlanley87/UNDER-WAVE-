@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Search } from 'lucide-react'
+import { ArrowLeft, Play, Plus, Search, Sparkles } from 'lucide-react'
 import './index.css'
 import { AppLayout, type AppTab, PremiumButton } from './_layout'
 import { Home } from './Home'
@@ -44,6 +44,7 @@ type FeedTrack = {
   coverUrl: string | null
 }
 type DiscoveryTrack = FeedTrack & { genre: string | null }
+type LibraryView = 'overview' | 'liked' | 'create-playlist'
 const EMPTY_PROFILE: ProfileRow = { display_name: null, avatar_url: null, bio: null }
 
 const GENRES = ['Hip-Hop', 'Electronic', 'Lo-Fi', 'Indie', 'R&B', 'Afrobeats']
@@ -191,7 +192,7 @@ function isMissingTableError(error: { code?: string; message?: string } | null, 
 }
 
 function getTableSqlMessage(table: keyof typeof REQUIRED_TABLE_SQL) {
-  return `Missing required table "${table}". Run this SQL in Supabase:\n${REQUIRED_TABLE_SQL[table]}`
+  return `Missing required table "${table}". Run this SQL in Supabase:\ncreate extension if not exists pgcrypto;\n${REQUIRED_TABLE_SQL[table]}`
 }
 
 function UnderwaveLogo() {
@@ -240,6 +241,7 @@ function App() {
   const [genre, setGenre] = useState(GENRES[0])
   const [audioFile, setAudioFile] = useState<File | null>(null)
   const [coverFile, setCoverFile] = useState<File | null>(null)
+  const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
 
@@ -257,6 +259,10 @@ function App() {
   const [profileImageUploading, setProfileImageUploading] = useState(false)
   const [followersCount, setFollowersCount] = useState(0)
   const [followingCount, setFollowingCount] = useState(0)
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null)
+  const [libraryView, setLibraryView] = useState<LibraryView>('overview')
+  const [playlistNameDraft, setPlaylistNameDraft] = useState('')
+  const [playlistSelectionIds, setPlaylistSelectionIds] = useState<Set<string>>(new Set())
 
   const [playerProgress, setPlayerProgress] = useState(22)
   const [comments, setComments] = useState<Array<{ id: string; author: string; body: string }>>([])
@@ -264,6 +270,9 @@ function App() {
   const [commentSubmitting, setCommentSubmitting] = useState(false)
   const [dataMessage, setDataMessage] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const audioInputRef = useRef<HTMLInputElement | null>(null)
+  const coverInputRef = useRef<HTMLInputElement | null>(null)
+  const avatarInputRef = useRef<HTMLInputElement | null>(null)
   const nextTrackRef = useRef<(() => void) | null>(null)
   const lastPlayEventTrackIdRef = useRef<string | null>(null)
 
@@ -304,6 +313,21 @@ function App() {
       authListener.subscription.unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    if (!coverFile) {
+      setCoverPreviewUrl(null)
+      return
+    }
+    const url = URL.createObjectURL(coverFile)
+    setCoverPreviewUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [coverFile])
+
+  useEffect(() => {
+    if (!avatarPreviewUrl) return
+    return () => URL.revokeObjectURL(avatarPreviewUrl)
+  }, [avatarPreviewUrl])
 
   const refreshTracks = useCallback(async (userId: string) => {
     const { data, error } = await supabase
@@ -671,13 +695,25 @@ function App() {
       setTitle('')
       setAudioFile(null)
       setCoverFile(null)
+      setCoverPreviewUrl(null)
+      if (audioInputRef.current) audioInputRef.current.value = ''
+      if (coverInputRef.current) coverInputRef.current.value = ''
       setUploadMessage('Upload successful.')
       setActiveTab('library')
+      setLibraryView('overview')
     } catch (error) {
       setUploadMessage(error instanceof Error ? error.message : 'Upload failed.')
     } finally {
       setUploading(false)
     }
+  }
+
+  const handleAudioPicked = (file: File | null) => {
+    setAudioFile(file)
+  }
+
+  const handleCoverPicked = (file: File | null) => {
+    setCoverFile(file)
   }
 
   const handleToggleLike = async () => {
@@ -795,6 +831,15 @@ function App() {
     setProfileImageUploading(false)
   }
 
+  const handleAvatarPicked = (file: File | null) => {
+    if (!file) return
+    setAvatarPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return URL.createObjectURL(file)
+    })
+    void handleProfileImageUpload(file)
+  }
+
   const handleAddToPlaylist = async (playlistId: string) => {
     if (!sessionUserId || !currentTrack) return
 
@@ -818,6 +863,67 @@ function App() {
     const audio = audioRef.current
     if (!audio || !audio.duration || Number.isNaN(audio.duration)) return
     audio.currentTime = (value / 100) * audio.duration
+  }
+
+  const togglePlaylistSelection = (trackId: string) => {
+    setPlaylistSelectionIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(trackId)) next.delete(trackId)
+      else next.add(trackId)
+      return next
+    })
+  }
+
+  const handleCreatePlaylistFromSelection = async () => {
+    if (!sessionUserId) return
+    if (!playlistNameDraft.trim()) {
+      setDataMessage('Playlist name is required.')
+      return
+    }
+    if (playlistSelectionIds.size === 0) {
+      setDataMessage('Select at least one track.')
+      return
+    }
+
+    const { data: playlistData, error: playlistError } = await supabase
+      .from('playlists')
+      .insert({
+        user_id: sessionUserId,
+        name: playlistNameDraft.trim(),
+      })
+      .select('id')
+      .single()
+
+    if (isMissingTableError(playlistError, 'playlists')) {
+      setDataMessage(getTableSqlMessage('playlists'))
+      return
+    }
+    if (playlistError || !playlistData) {
+      setDataMessage(playlistError?.message || 'Unable to create playlist.')
+      return
+    }
+
+    const inserts = Array.from(playlistSelectionIds).map((trackId) => ({
+      playlist_id: (playlistData as { id: string }).id,
+      track_id: trackId,
+      user_id: sessionUserId,
+    }))
+
+    const { error: playlistTracksError } = await supabase.from('playlist_tracks').insert(inserts)
+    if (isMissingTableError(playlistTracksError, 'playlist_tracks')) {
+      setDataMessage(getTableSqlMessage('playlist_tracks'))
+      return
+    }
+    if (playlistTracksError) {
+      setDataMessage(playlistTracksError.message)
+      return
+    }
+
+    await refreshPlaylists(sessionUserId)
+    setPlaylistNameDraft('')
+    setPlaylistSelectionIds(new Set())
+    setLibraryView('overview')
+    setDataMessage('Playlist created.')
   }
 
   const handleShare = async () => {
@@ -890,6 +996,10 @@ function App() {
   }, [discoveryTracks, likedTrackIds, recentTrackIds])
 
   const likedSongs = useMemo(() => discoveryTracks.filter((track) => likedTrackIds.has(track.id)), [discoveryTracks, likedTrackIds])
+  const likedSongQueue = useMemo(
+    () => allTracks.filter((track) => likedTrackIds.has(track.id)).map(toPlayerTrack),
+    [allTracks, likedTrackIds],
+  )
   const recentSongs = useMemo(() => {
     const map = new Map(discoveryTracks.map((track) => [track.id, track]))
     return recentTrackIds.map((id) => map.get(id)).filter((item): item is DiscoveryTrack => Boolean(item))
@@ -995,63 +1105,162 @@ function App() {
       case 'library':
         return (
           <section className="glassPanel libraryView">
-            <h2>Your Library</h2>
-            <div className="librarySection">
-              <h3>Liked Songs</h3>
-              <ul className="premiumVerticalList">
-                {likedSongs.length === 0 ? (
-                  <li className="muted">No liked tracks yet.</li>
-                ) : (
-                  likedSongs.map((track) => (
-                    <li key={track.id}>
-                      {track.coverUrl ? <img src={track.coverUrl} alt="cover" /> : <div className="coverFallback">♪</div>}
-                      <div>
+            {libraryView === 'overview' && (
+              <>
+                <div className="modernLibraryHeader">
+                  <h2>Your Library</h2>
+                  <p className="muted">Fresh picks and quick access inspired by modern streaming flows.</p>
+                </div>
+                <div className="libraryCards">
+                  <button className="libraryCard" type="button" onClick={() => setLibraryView('liked')}>
+                    <div>
+                      <strong>Liked Songs</strong>
+                      <span>{likedSongs.length} saved tracks</span>
+                    </div>
+                    <Play size={18} />
+                  </button>
+                  <button className="libraryCard" type="button" onClick={() => setLibraryView('create-playlist')}>
+                    <div>
+                      <strong>Create Playlist</strong>
+                      <span>Select tracks in a modern grid</span>
+                    </div>
+                    <Plus size={18} />
+                  </button>
+                  <div className="libraryTrendCard">
+                    <Sparkles size={18} />
+                    <div>
+                      <strong>Smart Mix</strong>
+                      <span>Dynamic recommendations update from your likes and recent plays.</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="librarySection">
+                  <h3>Recently Played</h3>
+                  <ul className="premiumVerticalList">
+                    {recentSongs.length === 0 ? (
+                      <li className="muted">No recent plays yet.</li>
+                    ) : (
+                      recentSongs.slice(0, 8).map((track) => (
+                        <li key={track.id}>
+                          {track.coverUrl ? <img src={track.coverUrl} alt="cover" /> : <div className="coverFallback">♪</div>}
+                          <div>
+                            <strong>{track.title}</strong>
+                            <span>{track.artist}</span>
+                          </div>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+                <div className="librarySection">
+                  <h3>Your Playlists</h3>
+                  <ul className="premiumVerticalList">
+                    {playlists.length === 0 ? (
+                      <li className="muted">No playlists yet.</li>
+                    ) : (
+                      playlists.map((playlist) => (
+                        <li key={playlist.id}>
+                          <div className="coverFallback">♫</div>
+                          <div>
+                            <strong>{playlist.name}</strong>
+                            <span>Curated by you</span>
+                          </div>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+              </>
+            )}
+
+            {libraryView === 'liked' && (
+              <div className="libraryPage">
+                <div className="libraryPageTop">
+                  <PremiumButton className="iconButton" onClick={() => setLibraryView('overview')}>
+                    <ArrowLeft size={18} />
+                  </PremiumButton>
+                  <h3>Liked Songs</h3>
+                </div>
+                <div className="libraryActionsBar">
+                  <PremiumButton
+                    className="primaryButton"
+                    onClick={() => {
+                      if (likedSongQueue.length > 0) {
+                        playTrack(likedSongQueue[0], likedSongQueue)
+                      }
+                    }}
+                    disabled={likedSongQueue.length === 0}
+                  >
+                    Play All
+                  </PremiumButton>
+                  <PremiumButton className="secondaryButton" onClick={() => setLibraryView('create-playlist')}>
+                    Create Playlist
+                  </PremiumButton>
+                </div>
+                <div className="libraryTrackGrid">
+                  {likedSongs.length === 0 ? (
+                    <p className="muted">No liked tracks yet.</p>
+                  ) : (
+                    likedSongs.map((track) => (
+                      <button
+                        key={track.id}
+                        className="libraryTrackTile"
+                        type="button"
+                        onClick={() => {
+                          const selected = likedSongQueue.find((item) => item.id === track.id)
+                          if (selected) playTrack(selected, likedSongQueue)
+                        }}
+                      >
+                        {track.coverUrl ? <img src={track.coverUrl} alt={track.title} /> : <div className="coverFallback">♪</div>}
                         <strong>{track.title}</strong>
                         <span>{track.artist}</span>
-                      </div>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
 
-            <div className="librarySection">
-              <h3>Recently Played</h3>
-              <ul className="premiumVerticalList">
-                {recentSongs.length === 0 ? (
-                  <li className="muted">No recent plays yet.</li>
-                ) : (
-                  recentSongs.slice(0, 8).map((track) => (
-                    <li key={track.id}>
-                      {track.coverUrl ? <img src={track.coverUrl} alt="cover" /> : <div className="coverFallback">♪</div>}
-                      <div>
-                        <strong>{track.title}</strong>
-                        <span>{track.artist}</span>
-                      </div>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </div>
-
-            <div className="librarySection">
-              <h3>Playlists</h3>
-              <ul className="premiumVerticalList">
-                {playlists.length === 0 ? (
-                  <li className="muted">No playlists yet.</li>
-                ) : (
-                  playlists.map((playlist) => (
-                    <li key={playlist.id}>
-                      <div className="coverFallback">♫</div>
-                      <div>
-                        <strong>{playlist.name}</strong>
-                        <span>Premium playlist</span>
-                      </div>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </div>
+            {libraryView === 'create-playlist' && (
+              <div className="libraryPage">
+                <div className="libraryPageTop">
+                  <PremiumButton className="iconButton" onClick={() => setLibraryView('overview')}>
+                    <ArrowLeft size={18} />
+                  </PremiumButton>
+                  <h3>Create Playlist</h3>
+                </div>
+                <input
+                  className="premiumInput"
+                  value={playlistNameDraft}
+                  onChange={(event) => setPlaylistNameDraft(event.target.value)}
+                  placeholder="Playlist name"
+                />
+                <div className="libraryTrackGrid selectable">
+                  {allTracks.length === 0 ? (
+                    <p className="muted">No tracks available yet.</p>
+                  ) : (
+                    allTracks.map((track) => {
+                      const selected = playlistSelectionIds.has(track.id)
+                      return (
+                        <button
+                          key={track.id}
+                          className={`libraryTrackTile ${selected ? 'selected' : ''}`}
+                          type="button"
+                          onClick={() => togglePlaylistSelection(track.id)}
+                        >
+                          {track.cover_url ? <img src={track.cover_url} alt={track.title} /> : <div className="coverFallback">♪</div>}
+                          <strong>{track.title}</strong>
+                          <span>{track.artist || 'Unknown Artist'}</span>
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+                <PremiumButton className="primaryButton" onClick={handleCreatePlaylistFromSelection}>
+                  Create Playlist with {playlistSelectionIds.size} Track{playlistSelectionIds.size === 1 ? '' : 's'}
+                </PremiumButton>
+              </div>
+            )}
           </section>
         )
       case 'upload':
@@ -1073,25 +1282,46 @@ function App() {
               ))}
             </select>
 
-            <label className="fileField">
-              <span>Audio file (required)</span>
+            <div className="mediaPicker">
+              <div>
+                <strong>Audio file</strong>
+                <p className="muted">{audioFile ? audioFile.name : 'Pick a track to upload.'}</p>
+              </div>
+              <PremiumButton className="secondaryButton" onClick={() => audioInputRef.current?.click()}>
+                {audioFile ? 'Change audio' : 'Select audio'}
+              </PremiumButton>
               <input
+                ref={audioInputRef}
                 type="file"
                 accept="audio/*"
-                onChange={(event) => setAudioFile(event.target.files?.[0] ?? null)}
+                className="hiddenInput"
+                onChange={(event) => handleAudioPicked(event.target.files?.[0] ?? null)}
               />
-              <small>{audioFile ? audioFile.name : 'Choose audio file'}</small>
-            </label>
+            </div>
 
-            <label className="fileField">
-              <span>Cover art (optional)</span>
+            <div className="mediaPicker">
+              <div>
+                <strong>Cover art</strong>
+                <p className="muted">{coverFile ? coverFile.name : 'Optional, but recommended.'}</p>
+              </div>
+              <PremiumButton className="secondaryButton" onClick={() => coverInputRef.current?.click()}>
+                {coverFile ? 'Change cover' : 'Select cover'}
+              </PremiumButton>
               <input
+                ref={coverInputRef}
                 type="file"
                 accept="image/*"
-                onChange={(event) => setCoverFile(event.target.files?.[0] ?? null)}
+                className="hiddenInput"
+                onChange={(event) => handleCoverPicked(event.target.files?.[0] ?? null)}
               />
-              <small>{coverFile ? coverFile.name : 'Choose image file'}</small>
-            </label>
+            </div>
+
+            {coverPreviewUrl && (
+              <div className="uploadPreview">
+                <img src={coverPreviewUrl} alt="Cover preview" />
+                <small>Cover preview</small>
+              </div>
+            )}
 
             <PremiumButton onClick={handleUpload} disabled={uploading} className="primaryButton">
               {uploading ? 'Uploading...' : 'Upload'}
@@ -1104,7 +1334,14 @@ function App() {
           <section className="glassPanel profileView">
             <h2>Profile</h2>
             <div className="profileHeader">
-              {profile.avatar_url ? <img src={profile.avatar_url} alt="profile avatar" /> : <div className="avatarFallback">U</div>}
+              <button className="avatarButton" type="button" onClick={() => avatarInputRef.current?.click()} aria-label="Change profile picture">
+                {avatarPreviewUrl || profile.avatar_url ? (
+                  <img src={avatarPreviewUrl || profile.avatar_url || ''} alt="profile avatar" />
+                ) : (
+                  <div className="avatarFallback">U</div>
+                )}
+                <span>Edit</span>
+              </button>
               <div className="profileMeta">
                 <strong>{getUserDisplayName(displayNameDraft, sessionEmail, 'UNDERWAVE Listener')}</strong>
                 <small>{sessionEmail}</small>
@@ -1136,16 +1373,14 @@ function App() {
                   onChange={(event) => setBioDraft(event.target.value)}
                 />
               </label>
-
-              <label className="fileField">
-                <span>Profile Picture</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => handleProfileImageUpload(event.target.files?.[0] ?? null)}
-                />
-                <small>{profileImageUploading ? 'Uploading...' : 'Upload to avatars bucket'}</small>
-              </label>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/*"
+                className="hiddenInput"
+                onChange={(event) => handleAvatarPicked(event.target.files?.[0] ?? null)}
+              />
+              <small>{profileImageUploading ? 'Uploading new profile image...' : 'Tap avatar to change profile picture'}</small>
             </div>
 
             <h3>Your Uploads</h3>
@@ -1180,7 +1415,10 @@ function App() {
     <>
       <AppLayout
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={(tab) => {
+          setActiveTab(tab)
+          if (tab === 'library') setLibraryView('overview')
+        }}
         currentTrack={currentTrack}
         isPlaying={isPlaying}
         isLiked={selectedTrackLiked}

@@ -175,12 +175,12 @@ export function AppLayout({
       </div>
 
       {currentTrack && (
-        <motion.div layoutId="player-shell" className="miniPlayer glassPanel" initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
+        <motion.div className="miniPlayer glassPanel" initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
           <button className="miniTrack" onClick={() => setFullPlayerOpen(true)} type="button">
             {currentTrack.coverUrl ? (
-              <motion.img layoutId="player-cover" src={currentTrack.coverUrl} alt={`${currentTrack.title} cover`} />
+              <img src={currentTrack.coverUrl} alt={`${currentTrack.title} cover`} />
             ) : (
-              <motion.div layoutId="player-cover" className="coverFallback">♪</motion.div>
+              <div className="coverFallback">♪</div>
             )}
             <span>
               <strong>{currentTrack.title}</strong>
@@ -188,17 +188,11 @@ export function AppLayout({
             </span>
           </button>
           <div className="miniActions">
-            <PremiumButton className="iconButton" onClick={onPrev}>
-              <SkipBack strokeWidth={2.5} size={18} />
-            </PremiumButton>
             <PremiumButton className="playButton" onClick={onTogglePlay}>
               {isPlaying ? <Pause strokeWidth={2.5} size={20} /> : <Play strokeWidth={2.5} size={20} />}
             </PremiumButton>
-            <PremiumButton className="iconButton" onClick={onNext}>
-              <SkipForward strokeWidth={2.5} size={18} />
-            </PremiumButton>
-            <PremiumButton className={`iconButton ${isRepeat ? 'active' : ''}`} onClick={onToggleRepeat}>
-              <Repeat strokeWidth={2.5} size={18} />
+            <PremiumButton className={`iconButton ${isLiked ? 'active' : ''}`} onClick={onToggleLike}>
+              <Heart strokeWidth={2.5} size={18} fill={isLiked ? 'currentColor' : 'none'} />
             </PremiumButton>
           </div>
         </motion.div>
@@ -220,7 +214,7 @@ export function AppLayout({
       <AnimatePresence>
         {fullPlayerOpen && currentTrack && (
           <motion.div className="playerOverlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <motion.div layoutId="player-shell" className="fullPlayer glassPanel" transition={{ type: 'spring', stiffness: 210, damping: 25 }}>
+            <motion.div className="fullPlayer glassPanel" transition={{ type: 'spring', stiffness: 210, damping: 25 }}>
               <div className="fullPlayerTopBar">
                 <PremiumButton className="iconButton" onClick={() => setFullPlayerOpen(false)}>
                   <X size={18} strokeWidth={2.5} />
@@ -236,7 +230,6 @@ export function AppLayout({
               <div className={`heroCoverWrap ${isPlaying ? 'playingGlow' : ''}`}>
                 {currentTrack.coverUrl ? (
                   <motion.img
-                    layoutId="player-cover"
                     src={currentTrack.coverUrl}
                     alt={`${currentTrack.title} artwork`}
                     className="heroCover"
@@ -244,7 +237,7 @@ export function AppLayout({
                     transition={{ duration: 4, repeat: isPlaying ? Infinity : 0, ease: 'easeInOut' }}
                   />
                 ) : (
-                  <motion.div layoutId="player-cover" className="heroCover coverFallback">♪</motion.div>
+                  <div className="heroCover coverFallback">♪</div>
                 )}
                 <div className={`radioWaveOverlay ${isPlaying ? 'active' : ''}`} aria-hidden="true">
                   {RADIO_WAVE_BAR_INDICES.map((index) => (
