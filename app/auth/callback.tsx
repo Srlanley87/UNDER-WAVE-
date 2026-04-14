@@ -3,9 +3,10 @@ import { Platform, View, Text, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 
-function getRedirectPath() {
-  return '/discovery';
-}
+const REDIRECT_PATH = '/discovery';
+// OAuth redirects on cold web deploys can take longer due to network/provider round-trips.
+// Keep this long enough to allow code exchange/session hydration before fallback redirect.
+const CALLBACK_TIMEOUT_MS = 15000;
 
 export default function AuthCallback() {
   const router = useRouter();
@@ -14,21 +15,23 @@ export default function AuthCallback() {
 
   useEffect(() => {
     if (Platform.OS !== 'web') {
-      router.replace('/discovery');
+      router.replace(REDIRECT_PATH);
       return;
     }
 
     const url = typeof window !== 'undefined' ? window.location.href : '';
-    const hasCode = url.includes('code=');
-    const hasError = url.includes('error=')
-      || url.includes('error_description=')
-      || url.includes('access_denied');
+    const parsedUrl = new URL(url);
+    const searchParams = parsedUrl.searchParams;
+    const hashParams = new URLSearchParams(parsedUrl.hash.replace(/^#/, ''));
+    const hasCode = searchParams.has('code') || hashParams.has('code');
+    const hasError =
+      searchParams.has('error') ||
+      searchParams.has('error_description') ||
+      hashParams.has('error') ||
+      hashParams.has('error_description');
 
     if (hasError) {
       try {
-        const parsed = new URL(url);
-        const searchParams = parsed.searchParams;
-        const hashParams = new URLSearchParams(parsed.hash.replace(/^#/, ''));
         const desc =
           searchParams.get('error_description')
           ?? hashParams.get('error_description')
@@ -40,14 +43,14 @@ export default function AuthCallback() {
         setErrorMsg('Authentication failed');
       }
       setStatus('error');
-      setTimeout(() => router.replace(getRedirectPath()), 3000);
+      setTimeout(() => router.replace(REDIRECT_PATH), 3000);
       return;
     }
 
     // Safety fallback: redirect regardless
     const timeout = setTimeout(() => {
-      router.replace(getRedirectPath());
-    }, 15000);
+      router.replace(REDIRECT_PATH);
+    }, CALLBACK_TIMEOUT_MS);
 
     // Subscribe first so we don't miss early auth events.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -58,7 +61,7 @@ export default function AuthCallback() {
         session
       ) {
         clearTimeout(timeout);
-        router.replace(getRedirectPath());
+        router.replace(REDIRECT_PATH);
       }
     });
 
@@ -67,13 +70,13 @@ export default function AuthCallback() {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           clearTimeout(timeout);
-          router.replace(getRedirectPath());
+          router.replace(REDIRECT_PATH);
           return;
         }
 
         if (!hasCode) {
           clearTimeout(timeout);
-          router.replace(getRedirectPath());
+          router.replace(REDIRECT_PATH);
           return;
         }
 
@@ -82,7 +85,7 @@ export default function AuthCallback() {
           const { data: { session: retrySession } } = await supabase.auth.getSession();
           if (retrySession) {
             clearTimeout(timeout);
-            router.replace(getRedirectPath());
+            router.replace(REDIRECT_PATH);
             return;
           }
           throw error;
@@ -91,17 +94,19 @@ export default function AuthCallback() {
         const { data: { session: exchangedSession } } = await supabase.auth.getSession();
         if (exchangedSession) {
           clearTimeout(timeout);
-          router.replace(getRedirectPath());
+          router.replace(REDIRECT_PATH);
           return;
         }
 
-        setErrorMsg('Sign-in did not complete. Please try again.');
+        setErrorMsg(
+          'Session could not be established after authentication. This may be caused by browser storage settings or a network interruption. Please sign in again.'
+        );
         setStatus('error');
-        setTimeout(() => router.replace(getRedirectPath()), 3000);
+        setTimeout(() => router.replace(REDIRECT_PATH), 3000);
       } catch (err: unknown) {
         setErrorMsg(err instanceof Error ? err.message : 'Unexpected error during sign-in.');
         setStatus('error');
-        setTimeout(() => router.replace(getRedirectPath()), 3000);
+        setTimeout(() => router.replace(REDIRECT_PATH), 3000);
       }
     }
 

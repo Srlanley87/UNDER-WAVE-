@@ -61,8 +61,14 @@ export function useAuth() {
           if (refreshData.session) {
             resolvedSession = refreshData.session;
             console.log('[AUTH] Session restored via refreshSession');
-          } else if (isUnrecoverableRefreshFailure(refreshError ?? sessionError)) {
+          } else if (isUnrecoverableRefreshFailure(refreshError)) {
             console.warn('[AUTH] Refresh token invalid/expired — signing out');
+            clearPersistedAuth();
+            signOut();
+          } else if (isUnrecoverableRefreshFailure(sessionError)) {
+            // getSession() can also report unrecoverable refresh-token failures.
+            // Handle it explicitly (separate from refreshSession error) for clarity.
+            console.warn('[AUTH] getSession reported invalid/expired refresh token — signing out');
             clearPersistedAuth();
             signOut();
           } else if (refreshError) {
@@ -114,8 +120,9 @@ export function useAuth() {
         return;
       }
 
-      // Ignore transient null-session events to avoid force-signing-out users
-      // during network hiccups; explicit SIGNED_OUT is handled above.
+      // Ignore null-session events for non-SIGNED_OUT transitions
+      // (INITIAL_SESSION is handled above). This avoids force-signing-out users
+      // during transient network hiccups where auth events can briefly emit null.
       if (!session) {
         console.warn(`[AUTH] Ignoring transient ${event} event with null session`);
         setIsAuthLoading(false);
@@ -128,12 +135,13 @@ export function useAuth() {
     });
 
     // Fallback: if auth bootstrap hangs, unblock UI but do not force sign-out.
+    // 12s allows slower cold-start/session hydration paths on web deploys.
     const loadingTimeout = setTimeout(() => {
       if (!initialLoadDone) {
         console.warn('[AUTH] Session load timed out — keeping persisted auth state');
         initialLoadDone = true;
-        setIsAuthLoading(false);
-      } else {
+        // Only resolve loading if bootstrap has not already completed.
+        // This avoids late timeout callbacks touching settled auth state.
         setIsAuthLoading(false);
       }
     }, 12000);
