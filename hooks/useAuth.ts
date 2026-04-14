@@ -13,6 +13,17 @@ function clearPersistedAuth() {
   } catch { /* ignore storage errors */ }
 }
 
+function isUnrecoverableRefreshFailure(error: { message?: string } | null | undefined): boolean {
+  const msg = error?.message?.toLowerCase() ?? '';
+  if (!msg) return false;
+  return (
+    msg.includes('invalid refresh token') ||
+    msg.includes('refresh token not found') ||
+    msg.includes('refresh token has expired') ||
+    msg.includes('refresh token revoked')
+  );
+}
+
 export function useAuth() {
   const { setSession, setProfile, setIsAuthLoading, signOut } = useAuthStore();
   // Prevent duplicate profile fetches (getSession + INITIAL_SESSION both fire on load)
@@ -20,17 +31,6 @@ export function useAuth() {
 
   useEffect(() => {
     let initialLoadDone = false;
-    // Safety timeout: if loading hasn't resolved within 8 seconds, force-clear
-    // loading state so the UI never shows an infinite spinner.
-    const loadingTimeout = setTimeout(() => {
-      if (!initialLoadDone) {
-        console.warn('[AUTH] Session load timed out — clearing stale auth state');
-        initialLoadDone = true;
-        clearPersistedAuth();
-        signOut();
-        setIsAuthLoading(false);
-      }
-    }, 8000);
 
     // Get initial session — resolve loading state once done.
     // Guard: if INITIAL_SESSION already handled this (fired before getSession()
@@ -49,24 +49,40 @@ export function useAuth() {
         return;
       }
       initialLoadDone = true;
-      clearTimeout(loadingTimeout);
 
-      // If the stored session's access token is expired, attempt a refresh.
-      // getSession() auto-refreshes via the refresh token when possible.
-      if (!session && sessionError == null) {
-        // No valid session — clear any stale persisted state so we don't end up
-        // with an orphaned user in the Zustand store.
+      let resolvedSession = session;
+
+      // If we have a stored user but no active session, try one explicit refresh
+      // before signing the user out.
+      if (!resolvedSession) {
         const storedUser = useAuthStore.getState().user;
         if (storedUser) {
-          console.log('[AUTH] Stored user found but no valid session — clearing stale auth state');
-          clearPersistedAuth();
-          signOut();
+          const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+          if (refreshData.session) {
+            resolvedSession = refreshData.session;
+            console.log('[AUTH] Session restored via refreshSession');
+          } else if (isUnrecoverableRefreshFailure(refreshError)) {
+            console.warn('[AUTH] Refresh token invalid/expired — signing out');
+            clearPersistedAuth();
+            signOut();
+          } else if (isUnrecoverableRefreshFailure(sessionError)) {
+            // getSession() can also report unrecoverable refresh-token failures.
+            // Handle it explicitly (separate from refreshSession error) for clarity.
+            console.warn('[AUTH] getSession reported invalid/expired refresh token — signing out');
+            clearPersistedAuth();
+            signOut();
+          } else if (refreshError) {
+            console.warn('[AUTH] Transient refresh failure — keeping current auth state:', refreshError.message);
+          }
         }
       }
 
-      setSession(session);
-      if (session?.user) {
-        await fetchProfile(session.user);
+      setSession(resolvedSession);
+      if (resolvedSession?.user) {
+        await fetchProfile(resolvedSession.user);
+      } else if (isUnrecoverableRefreshFailure(sessionError)) {
+        clearPersistedAuth();
+        signOut();
       }
       setIsAuthLoading(false);
     });
@@ -82,18 +98,9 @@ export function useAuth() {
         if (!initialLoadDone) {
           // getSession() hasn't resolved yet — handle here and let getSession() no-op
           initialLoadDone = true;
-          clearTimeout(loadingTimeout);
           setSession(session);
           if (session?.user) {
             await fetchProfile(session.user);
-          } else {
-            // No session — clear any stale persisted data
-            const storedUser = useAuthStore.getState().user;
-            if (storedUser) {
-              console.log('[AUTH] INITIAL_SESSION: no session, clearing stale auth state');
-              clearPersistedAuth();
-              signOut();
-            }
           }
           setIsAuthLoading(false);
         }
@@ -107,16 +114,37 @@ export function useAuth() {
       if (event === 'SIGNED_OUT') {
         // Ensure persisted state is also cleared on sign-out
         clearPersistedAuth();
+        fetchingForRef.current = null;
+        signOut();
+        setIsAuthLoading(false);
+        return;
+      }
+
+      // Ignore null-session events for non-SIGNED_OUT transitions
+      // (INITIAL_SESSION is handled above). This avoids force-signing-out users
+      // during transient network hiccups where auth events can briefly emit null.
+      if (!session) {
+        console.warn(`[AUTH] Ignoring transient ${event} event with null session`);
+        setIsAuthLoading(false);
+        return;
       }
 
       setSession(session);
-      if (session?.user) {
-        await fetchProfile(session.user);
-      } else {
-        fetchingForRef.current = null;
-        signOut();
-      }
+      await fetchProfile(session.user);
+      setIsAuthLoading(false);
     });
+
+    // Fallback: if auth bootstrap hangs, unblock UI but do not force sign-out.
+    // 12s allows slower cold-start/session hydration paths on web deploys.
+    const loadingTimeout = setTimeout(() => {
+      if (!initialLoadDone) {
+        console.warn('[AUTH] Session load timed out — keeping persisted auth state');
+        initialLoadDone = true;
+        // Only resolve loading if bootstrap has not already completed.
+        // This avoids late timeout callbacks touching settled auth state.
+        setIsAuthLoading(false);
+      }
+    }, 12000);
 
     return () => {
       clearTimeout(loadingTimeout);

@@ -14,6 +14,9 @@ In Vercel → Project → Settings → Environment Variables, add:
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | your `anon` / `public` key from Supabase → Settings → API |
 | `EXPO_PUBLIC_SITE_URL` | `https://<your-vercel-domain>.vercel.app` |
 
+> `EXPO_PUBLIC_SITE_URL` must exactly match the domain users actually open in the browser (same protocol + host, no trailing slash mismatch).
+> If users sign in on one host and later browse another (for example `www` vs non-`www`, or preview URL vs production URL), browser storage is isolated and they may appear signed out.
+
 > Find URL and anon key at: Supabase Dashboard → Settings (gear icon) → API
 
 Also create a `.env.local` at the project root for local dev:
@@ -47,6 +50,14 @@ EXPO_PUBLIC_SITE_URL=http://localhost:8081
    http://localhost:19006/auth/callback
    ```
 4. Click **Save**
+
+### Session persistence checklist (important for Vercel web)
+
+- Use one canonical domain for normal usage (avoid switching between multiple Vercel preview URLs and production when testing persistence).
+- Set `EXPO_PUBLIC_SITE_URL` to that same canonical domain.
+- Ensure Supabase **Site URL** uses that exact same canonical domain.
+- Ensure `/auth/callback` is included in Supabase redirect URLs for both production and local dev.
+- In Vercel, set the same env values for **Production** and **Preview** if you test auth in both environments.
 
 ---
 

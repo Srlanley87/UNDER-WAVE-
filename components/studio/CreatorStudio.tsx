@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Platform, View, Text, ScrollView } from 'react-native';
-import { supabase } from '@/lib/supabase';
+import { supabase, getFreshAccessToken } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 import type { Track } from '@/lib/database.types';
 import ReplayHeatmap from '@/components/studio/ReplayHeatmap';
@@ -50,6 +50,10 @@ function UploadTrackCard() {
     setError(null);
 
     try {
+      // Pre-check auth state before starting potentially long uploads.
+      // If refresh fails, surface a clear error immediately.
+      await getFreshAccessToken(15000);
+
       const artistName = profile?.username || user.email?.split('@')[0] || 'Unknown Artist';
       const audioPath = `${user.id}/${Date.now()}_${audioFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 

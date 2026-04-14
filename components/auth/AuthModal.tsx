@@ -18,7 +18,6 @@ function WebAuthModal() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [visible, setVisible] = useState(true);
-  const [rememberMe, setRememberMe] = useState(true);
 
   const { setSession } = useAuthStore();
 
@@ -46,12 +45,6 @@ function WebAuthModal() {
           return;
         }
         setSession(data.session);
-        // If "Remember Me" is unchecked, remove the persisted auth so the session
-        // clears when the browser is closed (Supabase's own storage still handles
-        // the current-tab session; we only clear the Zustand persistence layer).
-        if (!rememberMe && typeof window !== 'undefined') {
-          localStorage.removeItem('auth-storage');
-        }
         setVisible(false);
       } else {
         const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -194,19 +187,6 @@ function WebAuthModal() {
               <input type="password" placeholder="Password" value={password}
                 onChange={(e) => setPassword(e.target.value)} style={webInputStyle}
                 onKeyDown={(e) => e.key === 'Enter' && handleAuth()} />
-
-              {/* Remember Me — only shown on sign-in tab */}
-              {tab === 'signin' && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    style={{ width: 16, height: 16, accentColor: GOLD, cursor: 'pointer' }}
-                  />
-                  <span style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>Keep me signed in</span>
-                </label>
-              )}
 
               <motion.button whileTap={{ scale: 0.97 }} onClick={handleAuth} disabled={loading}
                 style={{
