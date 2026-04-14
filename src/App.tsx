@@ -748,7 +748,11 @@ function App() {
       return
     }
 
-    setProfile((prev) => ({ ...prev, display_name: displayNameDraft.trim() || null }))
+    setProfile((prev) => ({
+      ...prev,
+      display_name: displayNameDraft.trim() || null,
+      bio: bioDraft.trim() || null,
+    }))
     setProfileMessage('Profile updated.')
   }
 
@@ -1126,7 +1130,7 @@ function App() {
                 <span>Custom Bio</span>
                 <textarea
                   className="premiumInput"
-                  placeholder="Tell listeners about you"
+                  placeholder="Tell listeners about you."
                   rows={3}
                   value={bioDraft}
                   onChange={(event) => setBioDraft(event.target.value)}
