@@ -535,6 +535,15 @@ input:focus::placeholder {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.avatarImage {
+  width: 84px;
+  height: 84px;
+  border-radius: 999px;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
 .avatarButton {
   border: 0;
   background: transparent;
@@ -615,11 +624,19 @@ input:focus::placeholder {
   gap: 0.45rem;
 }
 
-.uploadPreview img {
+.uploadPreview img,
+.uploadPreviewSurface {
   width: 100%;
   max-height: 220px;
+  min-height: 220px;
   object-fit: cover;
   border-radius: 12px;
+}
+
+.uploadPreviewSurface {
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
 }
 
 .modernLibraryHeader {

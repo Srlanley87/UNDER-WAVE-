@@ -195,6 +195,25 @@ function getTableSqlMessage(table: keyof typeof REQUIRED_TABLE_SQL) {
   return `Missing required table "${table}". Run this SQL in Supabase:\ncreate extension if not exists pgcrypto;\n${REQUIRED_TABLE_SQL[table]}`
 }
 
+function sanitizeImageUrl(url: string | null | undefined) {
+  if (!url) return null
+  const value = url.trim()
+  if (!value) return null
+  if (value.startsWith('blob:')) return value
+  if (value.startsWith('data:image/')) return value
+  try {
+    const parsed = new URL(value)
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') return parsed.toString()
+  } catch {
+    return null
+  }
+  return null
+}
+
+function toBackgroundImage(url: string) {
+  return `url("${url.replace(/"/g, '%22')}")`
+}
+
 function UnderwaveLogo() {
   return (
     <div className="authLogo" aria-label="Underwave logo" role="img">
@@ -326,7 +345,11 @@ function App() {
 
   useEffect(() => {
     if (!avatarPreviewUrl) return
-    return () => URL.revokeObjectURL(avatarPreviewUrl)
+    return () => {
+      if (avatarPreviewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(avatarPreviewUrl)
+      }
+    }
   }, [avatarPreviewUrl])
 
   const refreshTracks = useCallback(async (userId: string) => {
@@ -696,8 +719,12 @@ function App() {
       setAudioFile(null)
       setCoverFile(null)
       setCoverPreviewUrl(null)
-      if (audioInputRef.current) audioInputRef.current.value = ''
-      if (coverInputRef.current) coverInputRef.current.value = ''
+      if (audioInputRef.current) {
+        audioInputRef.current.value = ''
+      }
+      if (coverInputRef.current) {
+        coverInputRef.current.value = ''
+      }
       setUploadMessage('Upload successful.')
       setActiveTab('library')
       setLibraryView('overview')
@@ -834,10 +861,12 @@ function App() {
   const handleAvatarPicked = (file: File | null) => {
     if (!file) return
     setAvatarPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev)
+      if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev)
       return URL.createObjectURL(file)
     })
-    void handleProfileImageUpload(file)
+    void handleProfileImageUpload(file).catch(() => {
+      setProfileMessage('Unable to upload profile image.')
+    })
   }
 
   const handleAddToPlaylist = async (playlistId: string) => {
@@ -1004,6 +1033,8 @@ function App() {
     const map = new Map(discoveryTracks.map((track) => [track.id, track]))
     return recentTrackIds.map((id) => map.get(id)).filter((item): item is DiscoveryTrack => Boolean(item))
   }, [recentTrackIds, discoveryTracks])
+  const safeCoverPreviewUrl = sanitizeImageUrl(coverPreviewUrl)
+  const safeAvatarUrl = sanitizeImageUrl(avatarPreviewUrl || profile.avatar_url)
 
   if (loadingSession) {
     return <div className="loading">Loading UNDERWAVE...</div>
@@ -1316,9 +1347,9 @@ function App() {
               />
             </div>
 
-            {coverPreviewUrl && (
+            {safeCoverPreviewUrl && (
               <div className="uploadPreview">
-                <img src={coverPreviewUrl} alt="Cover preview" />
+                <div className="uploadPreviewSurface" aria-hidden="true" style={{ backgroundImage: toBackgroundImage(safeCoverPreviewUrl) }} />
                 <small>Cover preview</small>
               </div>
             )}
@@ -1335,8 +1366,8 @@ function App() {
             <h2>Profile</h2>
             <div className="profileHeader">
               <button className="avatarButton" type="button" onClick={() => avatarInputRef.current?.click()} aria-label="Change profile picture">
-                {avatarPreviewUrl || profile.avatar_url ? (
-                  <img src={avatarPreviewUrl || profile.avatar_url || ''} alt="profile avatar" />
+                {safeAvatarUrl ? (
+                  <div className="avatarImage" aria-hidden="true" style={{ backgroundImage: toBackgroundImage(safeAvatarUrl) }} />
                 ) : (
                   <div className="avatarFallback">U</div>
                 )}
