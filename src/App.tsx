@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Search } from 'lucide-react'
 import './index.css'
@@ -23,6 +23,7 @@ type TrackRow = {
 type ProfileRow = {
   display_name: string | null
   avatar_url: string | null
+  bio: string | null
 }
 
 type PlaylistRow = {
@@ -43,6 +44,7 @@ type FeedTrack = {
   coverUrl: string | null
 }
 type DiscoveryTrack = FeedTrack & { genre: string | null }
+const EMPTY_PROFILE: ProfileRow = { display_name: null, avatar_url: null, bio: null }
 
 const GENRES = ['Hip-Hop', 'Electronic', 'Lo-Fi', 'Indie', 'R&B', 'Afrobeats']
 const AUDIO_BUCKET = 'audio'
@@ -52,7 +54,38 @@ const COVER_BUCKET =
   'cover'
 const AVATAR_BUCKET = 'avatars'
 
-const REQUIRED_TABLE_SQL: Record<'likes' | 'follows' | 'playlists' | 'comments', string> = {
+const REQUIRED_TABLE_SQL: Record<
+  'tracks' | 'profiles' | 'likes' | 'follows' | 'playlists' | 'playlist_tracks' | 'comments' | 'play_events',
+  string
+> = {
+  tracks: `create table if not exists public.tracks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null,
+  artist text,
+  genre text,
+  audio_url text not null,
+  cover_url text,
+  play_count integer not null default 0,
+  like_count integer not null default 0,
+  created_at timestamptz not null default now()
+);
+alter table public.tracks enable row level security;
+create policy "tracks_select_all" on public.tracks for select using (true);
+create policy "tracks_insert_own" on public.tracks for insert with check (auth.uid() = user_id);
+create policy "tracks_update_own" on public.tracks for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "tracks_delete_own" on public.tracks for delete using (auth.uid() = user_id);`,
+  profiles: `create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  display_name text,
+  avatar_url text,
+  bio text,
+  updated_at timestamptz not null default now()
+);
+alter table public.profiles enable row level security;
+create policy "profiles_select_all" on public.profiles for select using (true);
+create policy "profiles_insert_own" on public.profiles for insert with check (auth.uid() = id);
+create policy "profiles_update_own" on public.profiles for update using (auth.uid() = id) with check (auth.uid() = id);`,
   likes: `create table if not exists public.likes (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -87,6 +120,18 @@ create policy "playlists_select_own" on public.playlists for select using (auth.
 create policy "playlists_insert_own" on public.playlists for insert with check (auth.uid() = user_id);
 create policy "playlists_update_own" on public.playlists for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "playlists_delete_own" on public.playlists for delete using (auth.uid() = user_id);`,
+  playlist_tracks: `create table if not exists public.playlist_tracks (
+  id uuid primary key default gen_random_uuid(),
+  playlist_id uuid not null references public.playlists(id) on delete cascade,
+  track_id uuid not null references public.tracks(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (playlist_id, track_id)
+);
+alter table public.playlist_tracks enable row level security;
+create policy "playlist_tracks_select_own" on public.playlist_tracks for select using (auth.uid() = user_id);
+create policy "playlist_tracks_insert_own" on public.playlist_tracks for insert with check (auth.uid() = user_id);
+create policy "playlist_tracks_delete_own" on public.playlist_tracks for delete using (auth.uid() = user_id);`,
   comments: `create table if not exists public.comments (
   id uuid primary key default gen_random_uuid(),
   track_id uuid not null references public.tracks(id) on delete cascade,
@@ -99,6 +144,15 @@ create policy "comments_select_all" on public.comments for select using (true);
 create policy "comments_insert_own" on public.comments for insert with check (auth.uid() = user_id);
 create policy "comments_update_own" on public.comments for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "comments_delete_own" on public.comments for delete using (auth.uid() = user_id);`,
+  play_events: `create table if not exists public.play_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  track_id uuid not null references public.tracks(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+alter table public.play_events enable row level security;
+create policy "play_events_select_own" on public.play_events for select using (auth.uid() = user_id);
+create policy "play_events_insert_own" on public.play_events for insert with check (auth.uid() = user_id);`,
 }
 
 function safeFileName(fileName: string) {
@@ -196,8 +250,9 @@ function App() {
   const [recentTrackIds, setRecentTrackIds] = useState<string[]>([])
   const [playlists, setPlaylists] = useState<PlaylistRow[]>([])
 
-  const [profile, setProfile] = useState<ProfileRow>({ display_name: null, avatar_url: null })
+  const [profile, setProfile] = useState<ProfileRow>(EMPTY_PROFILE)
   const [displayNameDraft, setDisplayNameDraft] = useState('')
+  const [bioDraft, setBioDraft] = useState('')
   const [profileMessage, setProfileMessage] = useState<string | null>(null)
   const [profileImageUploading, setProfileImageUploading] = useState(false)
   const [followersCount, setFollowersCount] = useState(0)
@@ -208,6 +263,9 @@ function App() {
   const [commentDraft, setCommentDraft] = useState('')
   const [commentSubmitting, setCommentSubmitting] = useState(false)
   const [dataMessage, setDataMessage] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const nextTrackRef = useRef<(() => void) | null>(null)
+  const lastPlayEventTrackIdRef = useRef<string | null>(null)
 
   const {
     currentTrack,
@@ -255,6 +313,10 @@ function App() {
       .limit(240)
 
     if (error) {
+      if (isMissingTableError(error, 'tracks')) {
+        setDataMessage(getTableSqlMessage('tracks'))
+        return
+      }
       setDataMessage(error.message)
       return
     }
@@ -292,6 +354,9 @@ function App() {
       .limit(40)
 
     if (error) {
+      if (isMissingTableError(error, 'play_events')) {
+        setDataMessage(getTableSqlMessage('play_events'))
+      }
       return
     }
 
@@ -321,7 +386,7 @@ function App() {
 
   const refreshProfile = async (userId: string) => {
     const [{ data: profileData, error: profileError }, followers, following] = await Promise.all([
-      supabase.from('profiles').select('display_name,avatar_url').eq('id', userId).maybeSingle(),
+      supabase.from('profiles').select('display_name,avatar_url,bio').eq('id', userId).maybeSingle(),
       supabase.from('follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', userId),
       supabase.from('follows').select('following_id', { count: 'exact', head: true }).eq('follower_id', userId),
     ])
@@ -329,6 +394,9 @@ function App() {
     if (!profileError && profileData) {
       setProfile(profileData as ProfileRow)
       setDisplayNameDraft((profileData as ProfileRow).display_name || '')
+      setBioDraft((profileData as ProfileRow).bio || '')
+    } else if (isMissingTableError(profileError, 'profiles')) {
+      setDataMessage(getTableSqlMessage('profiles'))
     }
 
     if (isMissingTableError(followers.error, 'follows') || isMissingTableError(following.error, 'follows')) {
@@ -360,6 +428,10 @@ function App() {
   }, [sessionUserId, refreshTracks])
 
   const currentTrackId = currentTrack?.id ?? null
+
+  useEffect(() => {
+    nextTrackRef.current = nextTrack
+  }, [nextTrack])
 
   useEffect(() => {
     if (!sessionUserId || !currentTrackId) {
@@ -407,6 +479,84 @@ function App() {
 
     void loadComments()
   }, [sessionUserId, currentTrackId])
+
+  useEffect(() => {
+    const audio = new Audio()
+    audio.preload = 'metadata'
+    audioRef.current = audio
+
+    const handleTimeUpdate = () => {
+      if (!audio.duration || Number.isNaN(audio.duration)) {
+        setPlayerProgress(0)
+        return
+      }
+      setPlayerProgress(Math.min(100, Math.max(0, (audio.currentTime / audio.duration) * 100)))
+    }
+
+    const handleEnded = () => {
+      nextTrackRef.current?.()
+    }
+
+    audio.addEventListener('timeupdate', handleTimeUpdate)
+    audio.addEventListener('ended', handleEnded)
+
+    return () => {
+      audio.pause()
+      audio.removeEventListener('timeupdate', handleTimeUpdate)
+      audio.removeEventListener('ended', handleEnded)
+      audioRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+
+    if (!currentTrack?.audioUrl) {
+      audio.pause()
+      audio.removeAttribute('src')
+      audio.load()
+      setPlayerProgress(0)
+      return
+    }
+
+    if (audio.src !== currentTrack.audioUrl) {
+      audio.src = currentTrack.audioUrl
+      audio.load()
+      setPlayerProgress(0)
+    }
+  }, [currentTrack?.id, currentTrack?.audioUrl])
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio || !currentTrack?.audioUrl) return
+
+    if (!isPlaying) {
+      audio.pause()
+      return
+    }
+
+    void audio.play().catch((error) => {
+      setDataMessage(error instanceof Error ? error.message : 'Unable to start audio playback.')
+    })
+  }, [isPlaying, currentTrack?.id, currentTrack?.audioUrl])
+
+  useEffect(() => {
+    if (!sessionUserId || !currentTrack?.id || !isPlaying || lastPlayEventTrackIdRef.current === currentTrack.id) return
+
+    lastPlayEventTrackIdRef.current = currentTrack.id
+    void supabase
+      .from('play_events')
+      .insert({ user_id: sessionUserId, track_id: currentTrack.id })
+      .then(({ error }) => {
+        if (isMissingTableError(error, 'play_events')) {
+          setDataMessage(getTableSqlMessage('play_events'))
+          return
+        }
+        if (error) return
+        void refreshRecent(sessionUserId)
+      })
+  }, [sessionUserId, currentTrack?.id, isPlaying])
 
   const handleAuth = async () => {
     if (!email.trim() || !password) {
@@ -581,13 +731,14 @@ function App() {
     setCommentSubmitting(false)
   }
 
-  const handleSaveDisplayName = async () => {
+  const handleSaveProfile = async () => {
     if (!sessionUserId) return
 
     const { error } = await supabase.from('profiles').upsert(
       {
         id: sessionUserId,
         display_name: displayNameDraft.trim() || null,
+        bio: bioDraft.trim() || null,
       },
       { onConflict: 'id' },
     )
@@ -597,8 +748,12 @@ function App() {
       return
     }
 
-    setProfile((prev) => ({ ...prev, display_name: displayNameDraft.trim() || null }))
-    setProfileMessage('Display name updated.')
+    setProfile((prev) => ({
+      ...prev,
+      display_name: displayNameDraft.trim() || null,
+      bio: bioDraft.trim() || null,
+    }))
+    setProfileMessage('Profile updated.')
   }
 
   const handleProfileImageUpload = async (file: File | null) => {
@@ -625,6 +780,7 @@ function App() {
         id: sessionUserId,
         avatar_url: avatarPublic.publicUrl,
         display_name: displayNameDraft.trim() || null,
+        bio: bioDraft.trim() || null,
       },
       { onConflict: 'id' },
     )
@@ -648,11 +804,20 @@ function App() {
       user_id: sessionUserId,
     })
 
-    if (error) {
+    if (isMissingTableError(error, 'playlist_tracks')) {
+      setDataMessage(getTableSqlMessage('playlist_tracks'))
+    } else if (error) {
       setDataMessage(error.message)
     } else {
       setDataMessage('Added to playlist.')
     }
+  }
+
+  const handleSeek = (value: number) => {
+    setPlayerProgress(value)
+    const audio = audioRef.current
+    if (!audio || !audio.duration || Number.isNaN(audio.duration)) return
+    audio.currentTime = (value / 100) * audio.duration
   }
 
   const handleShare = async () => {
@@ -943,6 +1108,7 @@ function App() {
               <div className="profileMeta">
                 <strong>{getUserDisplayName(displayNameDraft, sessionEmail, 'UNDERWAVE Listener')}</strong>
                 <small>{sessionEmail}</small>
+                {profile.bio && <p className="profileBio">{profile.bio}</p>}
                 <div className="profileCounts">
                   <span>{followersCount} Followers</span>
                   <span>{followingCount} Following</span>
@@ -957,9 +1123,19 @@ function App() {
                 value={displayNameDraft}
                 onChange={(event) => setDisplayNameDraft(event.target.value)}
               />
-              <PremiumButton className="primaryButton" onClick={handleSaveDisplayName}>
-                Save Name
+              <PremiumButton className="primaryButton" onClick={handleSaveProfile}>
+                Save Profile
               </PremiumButton>
+              <label className="fileField">
+                <span>Custom Bio</span>
+                <textarea
+                  className="premiumInput"
+                  placeholder="Tell listeners about you."
+                  rows={3}
+                  value={bioDraft}
+                  onChange={(event) => setBioDraft(event.target.value)}
+                />
+              </label>
 
               <label className="fileField">
                 <span>Profile Picture</span>
@@ -1011,7 +1187,7 @@ function App() {
         isShuffle={isShuffle}
         isRepeat={isRepeat}
         progress={playerProgress}
-        onSeek={setPlayerProgress}
+        onSeek={handleSeek}
         onTogglePlay={togglePlay}
         onPrev={prevTrack}
         onNext={nextTrack}

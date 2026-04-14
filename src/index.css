@@ -28,7 +28,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
   color: inherit;
 }
@@ -208,8 +209,10 @@ small,
   align-items: center;
   justify-content: space-between;
   gap: 0.7rem;
-  padding: 0.56rem;
+  padding: 0.56rem 0.62rem;
   background: var(--glass-strong);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.34);
 }
 
 .miniTrack {
@@ -242,6 +245,10 @@ small,
   display: flex;
   align-items: center;
   gap: 0.35rem;
+}
+
+.miniActions {
+  flex-shrink: 0;
 }
 
 .navItem,
@@ -340,7 +347,8 @@ small,
 
 .premiumInput,
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid var(--stroke);
   background: rgba(255, 255, 255, 0.06);
@@ -357,7 +365,8 @@ input::placeholder {
 
 .premiumInput:focus,
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   outline: none;
   border-color: var(--gold-focus-border);
   box-shadow: 0 0 0 2px var(--gold-focus-ring);
@@ -526,6 +535,13 @@ input[type='file'] {
   gap: 0.25rem;
 }
 
+.profileBio {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
 .profileCounts {
   display: flex;
   gap: 0.65rem;
@@ -604,6 +620,45 @@ input[type='file'] {
   inset: 0;
   border-radius: 28px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 45%);
+}
+
+.radioWaveOverlay {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-evenly;
+  padding: 0.9rem 0.8rem;
+  background: linear-gradient(180deg, rgba(6, 6, 10, 0.02), rgba(6, 6, 10, 0.36));
+}
+
+.radioWaveOverlay span {
+  width: 4px;
+  height: 22%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 205, 74, 0.95), rgba(255, 184, 0, 0.38));
+  box-shadow: 0 0 10px rgba(255, 184, 0, 0.42);
+  opacity: 0.52;
+  transform-origin: bottom;
+  animation: radioWavePulse 1.24s ease-in-out infinite;
+  animation-play-state: paused;
+}
+
+.radioWaveOverlay.active span {
+  animation-play-state: running;
+}
+
+@keyframes radioWavePulse {
+  0%,
+  100% {
+    transform: scaleY(0.34);
+    opacity: 0.36;
+  }
+  45% {
+    transform: scaleY(1.05);
+    opacity: 0.94;
+  }
 }
 
 .playingGlow {
