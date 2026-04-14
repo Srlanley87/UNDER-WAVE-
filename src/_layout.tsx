@@ -73,6 +73,7 @@ const navItems: Array<{ id: AppTab; label: string; icon: typeof House }> = [
   { id: 'upload', label: 'Upload', icon: CirclePlus },
   { id: 'profile', label: 'Profile', icon: UserRound },
 ]
+const RADIO_WAVE_BARS = Array.from({ length: 20 }, (_, index) => index)
 
 function WaveLogo() {
   return (
@@ -187,9 +188,6 @@ export function AppLayout({
             </span>
           </button>
           <div className="miniActions">
-            <PremiumButton className={`iconButton ${isLiked ? 'active' : ''}`} onClick={onToggleLike}>
-              <Heart strokeWidth={2.5} size={19} fill={isLiked ? 'currentColor' : 'none'} />
-            </PremiumButton>
             <PremiumButton className="iconButton" onClick={onPrev}>
               <SkipBack strokeWidth={2.5} size={18} />
             </PremiumButton>
@@ -198,6 +196,9 @@ export function AppLayout({
             </PremiumButton>
             <PremiumButton className="iconButton" onClick={onNext}>
               <SkipForward strokeWidth={2.5} size={18} />
+            </PremiumButton>
+            <PremiumButton className={`iconButton ${isRepeat ? 'active' : ''}`} onClick={onToggleRepeat}>
+              <Repeat strokeWidth={2.5} size={18} />
             </PremiumButton>
           </div>
         </motion.div>
@@ -245,6 +246,11 @@ export function AppLayout({
                 ) : (
                   <motion.div layoutId="player-cover" className="heroCover coverFallback">♪</motion.div>
                 )}
+                <div className={`radioWaveOverlay ${isPlaying ? 'active' : ''}`} aria-hidden="true">
+                  {RADIO_WAVE_BARS.map((index) => (
+                    <span key={index} style={{ animationDelay: `${(index % 5) * 0.12}s` }} />
+                  ))}
+                </div>
                 <div className="heroGlass" />
               </div>
 
