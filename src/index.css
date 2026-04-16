@@ -12,6 +12,7 @@
   --gold-shadow: rgba(255, 184, 0, 0.3);
   --gold-focus-border: rgba(255, 184, 0, 0.75);
   --gold-focus-ring: rgba(255, 184, 0, 0.25);
+  --bottom-nav-height: 74px;
 }
 
 * {
@@ -46,7 +47,7 @@ textarea {
 .appShell {
   min-height: 100vh;
   position: relative;
-  padding: 1rem 1rem 11.6rem;
+  padding: 1rem 1rem 12.4rem;
 }
 
 .ashBackdrop {
@@ -187,12 +188,10 @@ small,
   font-size: 0.85rem;
 }
 
-.bottomNav,
-.miniPlayer {
+.bottomNav {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  width: min(760px, calc(100vw - 1.2rem));
   z-index: 24;
 }
 
@@ -202,11 +201,18 @@ small,
   grid-template-columns: repeat(5, 1fr);
   gap: 0.2rem;
   padding: 0.35rem;
+  min-height: var(--bottom-nav-height);
   width: min(620px, calc(100vw - 1.2rem));
 }
 
 .miniPlayer {
-  bottom: 5.85rem;
+  position: fixed;
+  bottom: calc(var(--bottom-nav-height) + 1.2rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: 600px;
+  z-index: 60;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -241,6 +247,21 @@ small,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.miniArtistLink,
+.artistInlineButton {
+  border: 0;
+  background: transparent;
+  color: var(--text-soft);
+  padding: 0;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.miniArtistLink:hover,
+.artistInlineButton:hover {
+  color: var(--gold);
 }
 
 .miniActions,
@@ -648,13 +669,69 @@ input:focus::placeholder {
   margin: 0;
 }
 
-.libraryCards {
-  display: grid;
-  gap: 0.6rem;
+.libraryFilterPills {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.35rem;
 }
 
-.libraryCard,
-.libraryTrendCard {
+.libraryFilterPill {
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  padding: 0.44rem 0.9rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.libraryFilterPill.active {
+  border-color: rgba(255, 184, 0, 0.6);
+  background: linear-gradient(135deg, rgba(255, 184, 0, 0.3), rgba(245, 158, 11, 0.18));
+}
+
+.likedSongsHero {
+  border: 1px solid rgba(255, 184, 0, 0.3);
+  border-radius: 18px;
+  padding: 0.9rem;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  color: #fff;
+  background: linear-gradient(135deg, rgba(63, 34, 96, 0.96), rgba(126, 58, 242, 0.72), rgba(255, 184, 0, 0.2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 18px 36px rgba(0, 0, 0, 0.34);
+}
+
+.likedSongsHeartWrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.likedSongsHero div {
+  display: grid;
+  gap: 0.2rem;
+  text-align: left;
+}
+
+.likedSongsHero span {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 0.84rem;
+}
+
+.librarySpotlightGrid {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.librarySpotlightCard {
   width: 100%;
   border: 1px solid var(--stroke);
   border-radius: 14px;
@@ -666,21 +743,40 @@ input:focus::placeholder {
   color: #fff;
 }
 
-.libraryCard {
-  cursor: pointer;
-}
-
-.libraryCard div,
-.libraryTrendCard div {
+.librarySpotlightCard div {
   display: grid;
   gap: 0.12rem;
   text-align: left;
 }
 
-.libraryCard span,
-.libraryTrendCard span {
+.librarySpotlightCard span {
   color: var(--text-soft);
   font-size: 0.82rem;
+}
+
+.libraryCollectionGrid {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+.libraryCollectionCard {
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  padding: 0.55rem;
+  display: grid;
+  gap: 0.36rem;
+  text-align: left;
+  color: #fff;
+}
+
+.libraryCollectionCard img,
+.libraryCollectionCard .coverFallback {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  object-fit: cover;
 }
 
 .libraryPage {
@@ -937,19 +1033,139 @@ input:focus::placeholder {
 
 .bottomSheet {
   position: fixed;
-  left: 1rem;
-  right: 1rem;
-  bottom: 1rem;
+  left: 0;
+  bottom: 0;
+  width: 100%;
   z-index: 91;
-  padding: 0.9rem;
+  padding: 1rem 1rem 1.2rem;
   display: grid;
   gap: 0.5rem;
+  border-radius: 24px 24px 0 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-bottom: 0;
+  background: rgba(10, 10, 14, 0.9);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
 }
 
 .sheetPlaylistGroup {
   margin-top: 0.3rem;
   display: grid;
   gap: 0.45rem;
+}
+
+.artistProfileView {
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.artistHero {
+  position: relative;
+  border-radius: 20px;
+  overflow: hidden;
+  min-height: 260px;
+}
+
+.artistHeroImage {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 184, 0, 0.36), rgba(12, 12, 18, 0.9));
+  background-size: cover;
+  background-position: center;
+  filter: saturate(1.08);
+}
+
+.artistHeroShade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(10, 10, 14, 0.18) 10%, rgba(10, 10, 14, 0.82) 100%);
+}
+
+.artistBackButton {
+  position: absolute;
+  top: 0.8rem;
+  left: 0.8rem;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: rgba(10, 10, 14, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.artistHeroMeta {
+  position: absolute;
+  left: 1rem;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1;
+  display: grid;
+  gap: 0.24rem;
+}
+
+.artistHeroMeta h2,
+.artistHeroMeta p {
+  margin: 0;
+}
+
+.artistBio {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.artistActionRow {
+  display: flex;
+}
+
+.artistFollowButton {
+  width: auto;
+  min-width: 180px;
+  border-radius: 999px;
+  padding: 0.75rem 1.1rem;
+  background: linear-gradient(135deg, var(--gold), var(--gold-2));
+  color: #09090b;
+  font-weight: 700;
+}
+
+.artistTrackList {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.artistTrackList h3 {
+  margin: 0.2rem 0 0;
+}
+
+.artistTrackRow {
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  padding: 0.52rem;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  color: #fff;
+}
+
+.artistTrackRow img,
+.artistTrackRow .coverFallback {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.artistTrackRow div {
+  display: grid;
+  gap: 0.15rem;
+  text-align: left;
+}
+
+.artistTrackRow span {
+  color: var(--text-soft);
+  font-size: 0.83rem;
 }
 
 .loading {
@@ -977,12 +1193,10 @@ input:focus::placeholder {
 }
 
 @media (min-width: 960px) {
-  .bottomSheet,
   .sqlMessage {
     left: 50%;
     transform: translateX(-50%);
     width: min(760px, calc(100vw - 2rem));
-    right: auto;
   }
 
   .bottomNav {
