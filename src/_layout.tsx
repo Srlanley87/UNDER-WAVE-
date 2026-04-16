@@ -16,6 +16,7 @@ import {
   UserRound,
   Repeat,
   X,
+  UserPlus,
 } from 'lucide-react'
 
 export type AppTab = 'home' | 'search' | 'library' | 'upload' | 'profile'
@@ -146,6 +147,10 @@ export function AppLayout({
   const [fullPlayerOpen, setFullPlayerOpen] = useState(false)
   const [commentsOpen, setCommentsOpen] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const clampedProgress = Math.max(0, Math.min(100, progress))
+  const progressRadius = 20
+  const progressCircumference = 2 * Math.PI * progressRadius
+  const progressDashOffset = progressCircumference - (clampedProgress / 100) * progressCircumference
 
   return (
     <main className="appShell">
@@ -176,35 +181,147 @@ export function AppLayout({
       </div>
 
       {currentTrack && (
-        <motion.div className="miniPlayer glassPanel" initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
-          <button className="miniTrack" onClick={() => setFullPlayerOpen(true)} type="button">
-            {currentTrack.coverUrl ? (
-              <img src={currentTrack.coverUrl} alt={`${currentTrack.title} cover`} />
-            ) : (
-              <div className="coverFallback">♪</div>
-            )}
-            <span>
-              <strong>{currentTrack.title}</strong>
-              <small>
+        <motion.div
+          className="miniPlayer"
+          initial={{ y: 18, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          style={{
+            position: 'fixed',
+            bottom: '80px',
+            left: '5px',
+            right: '5px',
+            borderRadius: '30px',
+            background: 'rgba(30, 30, 35, 0.95)',
+            backdropFilter: 'blur(16px)',
+            display: 'flex',
+            alignItems: 'center',
+            padding: '6px 16px 6px 6px',
+            gap: '12px',
+            zIndex: 9998,
+          }}
+        >
+          <button
+            type="button"
+            onClick={onTogglePlay}
+            aria-label={isPlaying ? 'Pause' : 'Play'}
+            style={{
+              position: 'relative',
+              width: '44px',
+              height: '44px',
+              minWidth: '44px',
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              display: 'grid',
+              placeItems: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <svg
+              width="44"
+              height="44"
+              viewBox="0 0 44 44"
+              aria-hidden="true"
+              style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}
+            >
+              <circle
+                cx="22"
+                cy="22"
+                r={progressRadius}
+                stroke="#FFB800"
+                strokeWidth="3"
+                fill="transparent"
+                strokeDasharray={progressCircumference}
+                strokeDashoffset={progressDashOffset}
+                strokeLinecap="round"
+              />
+            </svg>
+            <span
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: '50%',
+                background: '#FFF',
+                display: 'grid',
+                placeItems: 'center',
+                position: 'absolute',
+                inset: '50% auto auto 50%',
+                transform: 'translate(-50%, -50%)',
+              }}
+            >
+              {isPlaying ? (
+                <Pause size={20} strokeWidth={2.5} color="#000" fill="#000" />
+              ) : (
+                <Play size={20} strokeWidth={2.5} color="#000" fill="#000" />
+              )}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setFullPlayerOpen(true)}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              margin: 0,
+              textAlign: 'left',
+              cursor: 'pointer',
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <strong
+                style={{
+                  display: 'block',
+                  color: '#FFF',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {currentTrack.title}
+              </strong>
+              <small style={{ display: 'block' }}>
                 <button
                   type="button"
-                  className="miniArtistLink"
                   onClick={(event) => {
                     event.stopPropagation()
                     onViewArtistProfile(currentTrack.userId)
+                  }}
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    padding: 0,
+                    margin: 0,
+                    color: '#A0A0A0',
+                    fontSize: '12px',
+                    width: '100%',
+                    textAlign: 'left',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    cursor: 'pointer',
                   }}
                 >
                   {currentTrack.artist}
                 </button>
               </small>
-            </span>
+            </div>
           </button>
-          <div className="miniActions">
-            <PremiumButton className="playButton" onClick={onTogglePlay}>
-              {isPlaying ? <Pause strokeWidth={2.5} size={20} /> : <Play strokeWidth={2.5} size={20} />}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <PremiumButton
+              className="iconButton"
+              onClick={() => onViewArtistProfile(currentTrack.userId)}
+            >
+              <UserPlus strokeWidth={1.5} size={20} color="#FFF" />
             </PremiumButton>
             <PremiumButton className={`iconButton ${isLiked ? 'active' : ''}`} onClick={onToggleLike}>
-              <Heart strokeWidth={2.5} size={18} fill={isLiked ? 'currentColor' : 'none'} />
+              <Heart strokeWidth={1.5} size={20} color="#FFF" fill={isLiked ? '#FFF' : 'none'} />
             </PremiumButton>
           </div>
         </motion.div>
