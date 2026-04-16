@@ -5,6 +5,7 @@ export type PlayerTrack = {
   title: string
   artist: string
   coverUrl: string | null
+  userId?: string
   audioUrl?: string | null
   genre?: string | null
 }

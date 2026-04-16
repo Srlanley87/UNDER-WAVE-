@@ -25,6 +25,7 @@ type CurrentTrack = {
   title: string
   artist: string
   coverUrl: string | null
+  userId?: string
 }
 
 type PlaylistItem = {
@@ -61,7 +62,7 @@ type AppLayoutProps = {
   submittingComment: boolean
   playlists: PlaylistItem[]
   onAddCurrentTrackToPlaylist: (playlistId: string) => void
-  onViewArtistProfile: () => void
+  onViewArtistProfile: (artistId?: string) => void
   onShareTrack: () => void
   children: ReactNode
 }
@@ -184,7 +185,18 @@ export function AppLayout({
             )}
             <span>
               <strong>{currentTrack.title}</strong>
-              <small>{currentTrack.artist}</small>
+              <small>
+                <button
+                  type="button"
+                  className="miniArtistLink"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onViewArtistProfile(currentTrack.userId)
+                  }}
+                >
+                  {currentTrack.artist}
+                </button>
+              </small>
             </span>
           </button>
           <div className="miniActions">
@@ -249,7 +261,11 @@ export function AppLayout({
 
               <div className="playerMeta">
                 <h2>{currentTrack.title}</h2>
-                <p>{currentTrack.artist}</p>
+                <p>
+                  <button type="button" className="artistInlineButton" onClick={() => onViewArtistProfile(currentTrack.userId)}>
+                    {currentTrack.artist}
+                  </button>
+                </p>
               </div>
 
               <div className="progressWrap">
@@ -347,7 +363,7 @@ export function AppLayout({
                     aria-label="Close menu"
                   />
                   <motion.section className="bottomSheet glassPanel" initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 100, opacity: 0 }}>
-                    <PremiumButton className="sheetButton" onClick={onViewArtistProfile}>
+                    <PremiumButton className="sheetButton" onClick={() => onViewArtistProfile(currentTrack.userId)}>
                       View Artist Profile
                     </PremiumButton>
                     <PremiumButton className="sheetButton" onClick={onShareTrack}>

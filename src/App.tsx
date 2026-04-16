@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Play, Plus, Search, Sparkles } from 'lucide-react'
+import { ArrowLeft, Heart, Play, Plus, Search, Sparkles } from 'lucide-react'
 import './index.css'
 import { AppLayout, type AppTab, PremiumButton } from './_layout'
 import { Home } from './Home'
@@ -45,6 +45,14 @@ type FeedTrack = {
 }
 type DiscoveryTrack = FeedTrack & { genre: string | null }
 type LibraryView = 'overview' | 'liked' | 'create-playlist'
+type LibraryFilter = 'playlists' | 'albums' | 'artists' | 'downloaded'
+type ArtistProfileData = {
+  id: string
+  name: string
+  avatarUrl: string | null
+  headerImageUrl: string | null
+  bio: string | null
+}
 const EMPTY_PROFILE: ProfileRow = { display_name: null, avatar_url: null, bio: null }
 
 const GENRES = ['Hip-Hop', 'Electronic', 'Lo-Fi', 'Indie', 'R&B', 'Afrobeats']
@@ -182,6 +190,7 @@ function toPlayerTrack(track: TrackRow): PlayerTrack {
     coverUrl: track.cover_url,
     audioUrl: track.audio_url,
     genre: track.genre,
+    userId: track.user_id,
   }
 }
 
@@ -280,8 +289,16 @@ function App() {
   const [followingCount, setFollowingCount] = useState(0)
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null)
   const [libraryView, setLibraryView] = useState<LibraryView>('overview')
+  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('playlists')
   const [playlistNameDraft, setPlaylistNameDraft] = useState('')
   const [playlistSelectionIds, setPlaylistSelectionIds] = useState<Set<string>>(new Set())
+  const [artistRouteId, setArtistRouteId] = useState<string | null>(null)
+  const [artistProfile, setArtistProfile] = useState<ArtistProfileData | null>(null)
+  const [artistTracks, setArtistTracks] = useState<TrackRow[]>([])
+  const [artistFollowerCount, setArtistFollowerCount] = useState(0)
+  const [artistMonthlyListeners, setArtistMonthlyListeners] = useState(0)
+  const [isFollowingArtist, setIsFollowingArtist] = useState(false)
+  const [artistFollowLoading, setArtistFollowLoading] = useState(false)
 
   const [playerProgress, setPlayerProgress] = useState(22)
   const [comments, setComments] = useState<Array<{ id: string; author: string; body: string }>>([])
@@ -473,6 +490,16 @@ function App() {
       refreshProfile(sessionUserId),
     ])
   }, [sessionUserId, refreshTracks])
+
+  useEffect(() => {
+    const parseArtistPath = () => {
+      const match = window.location.pathname.match(/^\/artist\/([^/]+)$/)
+      setArtistRouteId(match ? decodeURIComponent(match[1]) : null)
+    }
+    parseArtistPath()
+    window.addEventListener('popstate', parseArtistPath)
+    return () => window.removeEventListener('popstate', parseArtistPath)
+  }, [])
 
   const currentTrackId = currentTrack?.id ?? null
 
@@ -979,6 +1006,114 @@ function App() {
     }
   }
 
+  const openArtistRoute = useCallback((artistId?: string) => {
+    if (!artistId) return
+    const nextPath = `/artist/${encodeURIComponent(artistId)}`
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, '', nextPath)
+    }
+    setArtistRouteId(artistId)
+  }, [])
+
+  const closeArtistRoute = useCallback(() => {
+    if (window.location.pathname !== '/') {
+      window.history.pushState({}, '', '/')
+    }
+    setArtistRouteId(null)
+  }, [])
+
+  useEffect(() => {
+    const loadArtistProfile = async () => {
+      if (!artistRouteId) {
+        setArtistProfile(null)
+        setArtistTracks([])
+        setArtistFollowerCount(0)
+        setArtistMonthlyListeners(0)
+        setIsFollowingArtist(false)
+        return
+      }
+
+      const [{ data: artistProfileRow }, { data: artistTrackRows, error: artistTracksError }, followers] = await Promise.all([
+        supabase.from('profiles').select('id,display_name,avatar_url,bio').eq('id', artistRouteId).maybeSingle(),
+        supabase
+          .from('tracks')
+          .select('id,title,artist,genre,play_count,like_count,cover_url,audio_url,user_id,created_at')
+          .eq('user_id', artistRouteId)
+          .order('created_at', { ascending: false }),
+        supabase.from('follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', artistRouteId),
+      ])
+
+      if (isMissingTableError(artistTracksError, 'tracks')) {
+        setDataMessage(getTableSqlMessage('tracks'))
+        return
+      }
+
+      const tracksByArtist = (artistTrackRows as TrackRow[]) || []
+      setArtistTracks(tracksByArtist)
+      const derivedName =
+        (artistProfileRow as { display_name?: string | null } | null)?.display_name?.trim() ||
+        tracksByArtist[0]?.artist ||
+        'Unknown Artist'
+      const heroImage = sanitizeImageUrl(tracksByArtist[0]?.cover_url) || sanitizeImageUrl((artistProfileRow as { avatar_url?: string | null } | null)?.avatar_url)
+      setArtistProfile({
+        id: artistRouteId,
+        name: derivedName,
+        avatarUrl: sanitizeImageUrl((artistProfileRow as { avatar_url?: string | null } | null)?.avatar_url),
+        headerImageUrl: heroImage,
+        bio: (artistProfileRow as { bio?: string | null } | null)?.bio || null,
+      })
+      setArtistFollowerCount(followers.count || 0)
+
+      if (sessionUserId) {
+        const { count } = await supabase
+          .from('follows')
+          .select('id', { count: 'exact', head: true })
+          .eq('follower_id', sessionUserId)
+          .eq('following_id', artistRouteId)
+        setIsFollowingArtist(Boolean(count))
+      }
+
+      if (tracksByArtist.length > 0) {
+        const trackIds = tracksByArtist.map((track) => track.id)
+        const cutoffIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+        const { data: monthlyEvents } = await supabase
+          .from('play_events')
+          .select('user_id')
+          .in('track_id', trackIds)
+          .gte('created_at', cutoffIso)
+          .limit(5000)
+        const listeners = new Set(((monthlyEvents as Array<{ user_id: string }>) || []).map((event) => event.user_id))
+        setArtistMonthlyListeners(listeners.size)
+      } else {
+        setArtistMonthlyListeners(0)
+      }
+    }
+
+    void loadArtistProfile()
+  }, [artistRouteId, sessionUserId])
+
+  const handleToggleFollowArtist = async () => {
+    if (!sessionUserId || !artistRouteId || sessionUserId === artistRouteId || artistFollowLoading) return
+    setArtistFollowLoading(true)
+    const query = isFollowingArtist
+      ? supabase.from('follows').delete().eq('follower_id', sessionUserId).eq('following_id', artistRouteId)
+      : supabase.from('follows').insert({ follower_id: sessionUserId, following_id: artistRouteId })
+    const { error } = await query
+    if (isMissingTableError(error, 'follows')) {
+      setDataMessage(getTableSqlMessage('follows'))
+      setArtistFollowLoading(false)
+      return
+    }
+    if (error) {
+      setDataMessage(error.message)
+      setArtistFollowLoading(false)
+      return
+    }
+    setIsFollowingArtist((prev) => !prev)
+    setArtistFollowerCount((prev) => prev + (isFollowingArtist ? -1 : 1))
+    setArtistFollowLoading(false)
+  }
+
   const discoveryTracks = useMemo<DiscoveryTrack[]>(() => {
     return allTracks.map((track) => ({
       id: track.id,
@@ -1029,10 +1164,6 @@ function App() {
     () => allTracks.filter((track) => likedTrackIds.has(track.id)).map(toPlayerTrack),
     [allTracks, likedTrackIds],
   )
-  const recentSongs = useMemo(() => {
-    const map = new Map(discoveryTracks.map((track) => [track.id, track]))
-    return recentTrackIds.map((id) => map.get(id)).filter((item): item is DiscoveryTrack => Boolean(item))
-  }, [recentTrackIds, discoveryTracks])
   const safeCoverPreviewUrl = sanitizeImageUrl(coverPreviewUrl)
   const safeAvatarUrl = sanitizeImageUrl(avatarPreviewUrl || profile.avatar_url)
 
@@ -1111,6 +1242,71 @@ function App() {
   }
 
   const renderTab = () => {
+    if (artistRouteId && artistProfile) {
+      return (
+        <section className="glassPanel artistProfileView">
+          <div className="artistHero">
+            <div
+              className="artistHeroImage"
+              aria-hidden="true"
+              style={
+                artistProfile.headerImageUrl
+                  ? { backgroundImage: toBackgroundImage(artistProfile.headerImageUrl) }
+                  : undefined
+              }
+            />
+            <div className="artistHeroShade" />
+            <PremiumButton className="artistBackButton" onClick={closeArtistRoute}>
+              <ArrowLeft size={18} />
+            </PremiumButton>
+            <div className="artistHeroMeta">
+              <h2>{artistProfile.name}</h2>
+              <p>{artistMonthlyListeners.toLocaleString()} Monthly Listeners</p>
+              <p>{artistFollowerCount.toLocaleString()} Followers</p>
+            </div>
+          </div>
+
+          {artistProfile.bio && <p className="artistBio">{artistProfile.bio}</p>}
+
+          <div className="artistActionRow">
+            <PremiumButton
+              className="artistFollowButton"
+              onClick={handleToggleFollowArtist}
+              disabled={sessionUserId === artistRouteId || artistFollowLoading}
+            >
+              {sessionUserId === artistRouteId ? 'This is you' : isFollowingArtist ? 'Following' : 'Follow'}
+            </PremiumButton>
+          </div>
+
+          <div className="artistTrackList">
+            <h3>Popular Uploads</h3>
+            {artistTracks.length === 0 ? (
+              <p className="muted">No tracks uploaded yet.</p>
+            ) : (
+              artistTracks.map((track) => (
+                <button
+                  key={track.id}
+                  className="artistTrackRow"
+                  type="button"
+                  onClick={() => {
+                    const selected = queue.find((item) => item.id === track.id) || toPlayerTrack(track)
+                    playTrack(selected, queue.length > 0 ? queue : artistTracks.map(toPlayerTrack))
+                  }}
+                >
+                  {track.cover_url ? <img src={track.cover_url} alt={track.title} /> : <div className="coverFallback">♪</div>}
+                  <div>
+                    <strong>{track.title}</strong>
+                    <span>{track.artist || artistProfile.name}</span>
+                  </div>
+                  <Play size={16} />
+                </button>
+              ))
+            )}
+          </div>
+        </section>
+      )
+    }
+
     switch (activeTab) {
       case 'home':
         return (
@@ -1140,66 +1336,116 @@ function App() {
               <>
                 <div className="modernLibraryHeader">
                   <h2>Your Library</h2>
-                  <p className="muted">Fresh picks and quick access inspired by modern streaming flows.</p>
+                  <p className="muted">Curated collections with premium glass depth.</p>
                 </div>
-                <div className="libraryCards">
-                  <button className="libraryCard" type="button" onClick={() => setLibraryView('liked')}>
-                    <div>
-                      <strong>Liked Songs</strong>
-                      <span>{likedSongs.length} saved tracks</span>
-                    </div>
-                    <Play size={18} />
-                  </button>
-                  <button className="libraryCard" type="button" onClick={() => setLibraryView('create-playlist')}>
+                <div className="libraryFilterPills">
+                  {[
+                    { id: 'playlists', label: 'Playlists' },
+                    { id: 'albums', label: 'Albums' },
+                    { id: 'artists', label: 'Artists' },
+                    { id: 'downloaded', label: 'Downloaded' },
+                  ].map((filter) => (
+                    <button
+                      key={filter.id}
+                      type="button"
+                      className={`libraryFilterPill ${libraryFilter === filter.id ? 'active' : ''}`}
+                      onClick={() => setLibraryFilter(filter.id as LibraryFilter)}
+                    >
+                      {filter.label}
+                    </button>
+                  ))}
+                </div>
+
+                <button className="likedSongsHero" type="button" onClick={() => setLibraryView('liked')}>
+                  <div className="likedSongsHeartWrap">
+                    <Heart size={26} fill="currentColor" />
+                  </div>
+                  <div>
+                    <strong>Liked Songs</strong>
+                    <span>{likedSongs.length} saved tracks</span>
+                  </div>
+                  <Play size={20} />
+                </button>
+
+                <div className="librarySpotlightGrid">
+                  <button className="librarySpotlightCard" type="button" onClick={() => setLibraryView('create-playlist')}>
+                    <Plus size={18} />
                     <div>
                       <strong>Create Playlist</strong>
-                      <span>Select tracks in a modern grid</span>
+                      <span>Build from your grid in one tap.</span>
                     </div>
-                    <Plus size={18} />
                   </button>
-                  <div className="libraryTrendCard">
+                  <div className="librarySpotlightCard">
                     <Sparkles size={18} />
                     <div>
                       <strong>Smart Mix</strong>
-                      <span>Dynamic recommendations update from your likes and recent plays.</span>
+                      <span>Updated from likes and play history.</span>
                     </div>
                   </div>
                 </div>
-                <div className="librarySection">
-                  <h3>Recently Played</h3>
-                  <ul className="premiumVerticalList">
-                    {recentSongs.length === 0 ? (
-                      <li className="muted">No recent plays yet.</li>
-                    ) : (
-                      recentSongs.slice(0, 8).map((track) => (
-                        <li key={track.id}>
-                          {track.coverUrl ? <img src={track.coverUrl} alt="cover" /> : <div className="coverFallback">♪</div>}
-                          <div>
-                            <strong>{track.title}</strong>
-                            <span>{track.artist}</span>
-                          </div>
-                        </li>
-                      ))
-                    )}
-                  </ul>
-                </div>
-                <div className="librarySection">
-                  <h3>Your Playlists</h3>
-                  <ul className="premiumVerticalList">
-                    {playlists.length === 0 ? (
-                      <li className="muted">No playlists yet.</li>
+
+                <div className="libraryCollectionGrid">
+                  {libraryFilter === 'playlists' &&
+                    (playlists.length === 0 ? (
+                      <p className="muted">No playlists yet.</p>
                     ) : (
                       playlists.map((playlist) => (
-                        <li key={playlist.id}>
+                        <article key={playlist.id} className="libraryCollectionCard">
                           <div className="coverFallback">♫</div>
                           <div>
                             <strong>{playlist.name}</strong>
-                            <span>Curated by you</span>
+                            <span>Playlist</span>
                           </div>
-                        </li>
+                        </article>
                       ))
-                    )}
-                  </ul>
+                    ))}
+
+                  {libraryFilter === 'albums' &&
+                    (allTracks.length === 0 ? (
+                      <p className="muted">No albums yet.</p>
+                    ) : (
+                      allTracks.slice(0, 8).map((track) => (
+                        <article key={track.id} className="libraryCollectionCard">
+                          {track.cover_url ? <img src={track.cover_url} alt={track.title} /> : <div className="coverFallback">♪</div>}
+                          <div>
+                            <strong>{track.title}</strong>
+                            <span>{track.artist || 'Unknown Artist'}</span>
+                          </div>
+                        </article>
+                      ))
+                    ))}
+
+                  {libraryFilter === 'artists' &&
+                    (Array.from(new Set(allTracks.map((track) => track.user_id))).length === 0 ? (
+                      <p className="muted">No artists yet.</p>
+                    ) : (
+                      Array.from(new Map(allTracks.map((track) => [track.user_id, track])).values())
+                        .slice(0, 8)
+                        .map((track) => (
+                          <button key={track.user_id} className="libraryCollectionCard" type="button" onClick={() => openArtistRoute(track.user_id)}>
+                            {track.cover_url ? <img src={track.cover_url} alt={track.artist || 'Artist'} /> : <div className="coverFallback">♪</div>}
+                            <div>
+                              <strong>{track.artist || 'Unknown Artist'}</strong>
+                              <span>Artist</span>
+                            </div>
+                          </button>
+                        ))
+                    ))}
+
+                  {libraryFilter === 'downloaded' &&
+                    (likedSongs.length === 0 ? (
+                      <p className="muted">No downloaded tracks yet.</p>
+                    ) : (
+                      likedSongs.slice(0, 8).map((track) => (
+                        <article key={track.id} className="libraryCollectionCard">
+                          {track.coverUrl ? <img src={track.coverUrl} alt={track.title} /> : <div className="coverFallback">♪</div>}
+                          <div>
+                            <strong>{track.title}</strong>
+                            <span>Available Offline</span>
+                          </div>
+                        </article>
+                      ))
+                    ))}
                 </div>
               </>
             )}
@@ -1447,6 +1693,7 @@ function App() {
       <AppLayout
         activeTab={activeTab}
         onTabChange={(tab) => {
+          closeArtistRoute()
           setActiveTab(tab)
           if (tab === 'library') setLibraryView('overview')
         }}
@@ -1470,7 +1717,7 @@ function App() {
         submittingComment={commentSubmitting}
         playlists={playlists}
         onAddCurrentTrackToPlaylist={handleAddToPlaylist}
-        onViewArtistProfile={() => setActiveTab('profile')}
+        onViewArtistProfile={openArtistRoute}
         onShareTrack={handleShare}
       >
         {renderTab()}
