@@ -183,14 +183,13 @@ export function AppLayout({
       {currentTrack && (
         <motion.div
           className="miniPlayer"
-          initial={{ y: 18, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
+          initial={{ y: 18, opacity: 0, x: '-50%' }}
+          animate={{ y: 0, opacity: 1, x: '-50%' }}
           style={{
             position: 'fixed',
             bottom: '76px',
-            left: '12px',
-            right: '12px',
-            margin: '0 auto',
+            left: '50%',
+            width: 'calc(100% - 24px)',
             maxWidth: '500px',
             borderRadius: '30px',
             background: 'rgba(30, 30, 35, 0.95)',
