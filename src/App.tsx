@@ -35,11 +35,21 @@ type PlaylistTrackJoinRow = {
   playlist_id: string
   created_at: string
   track_id: string
-  tracks: TrackRow | TrackRow[] | null
+  tracks: PlaylistTrackData | PlaylistTrackData[] | null
+}
+
+type PlaylistTrackData = {
+  id: string
+  title: string
+  artist: string | null
+  genre: string | null
+  cover_url: string | null
+  audio_url: string | null
+  user_id: string
 }
 
 type PlaylistSummary = PlaylistRow & {
-  tracks: TrackRow[]
+  tracks: PlaylistTrackData[]
   coverUrl: string | null
   collageUrls: string[]
 }
@@ -70,6 +80,7 @@ const EMPTY_PROFILE: ProfileRow = { display_name: null, avatar_url: null, bio: n
 
 const GENRES = ['Hip-Hop', 'Electronic', 'Lo-Fi', 'Indie', 'R&B', 'Afrobeats']
 const AUDIO_BUCKET = 'audio'
+const MAX_PLAYLIST_COLLAGE_IMAGES = 3
 const COVER_BUCKET =
   (import.meta.env as Record<string, string | undefined>).VITE_SUPABASE_COVER_BUCKET ||
   (import.meta.env as Record<string, string | undefined>).EXPO_PUBLIC_SUPABASE_COVER_BUCKET ||
@@ -126,7 +137,12 @@ function toBackgroundImage(url: string) {
 }
 
 function getPlaylistCollageGridClassName(count: number) {
-  return `playlistCollage playlistCollage${Math.min(Math.max(count, 1), 3)}`
+  return `playlistCollage playlistCollage${Math.min(Math.max(count, 1), MAX_PLAYLIST_COLLAGE_IMAGES)}`
+}
+
+function getPlaylistJoinedTrack(tracks: PlaylistTrackJoinRow['tracks']) {
+  if (!tracks) return null
+  return Array.isArray(tracks) ? tracks[0] || null : tracks
 }
 
 function UnderwaveLogo() {
@@ -345,7 +361,7 @@ function App() {
     const playlistIds = playlistRows.map((playlist) => playlist.id)
     const { data: playlistTracksData, error: playlistTracksError } = await supabase
       .from('playlist_tracks')
-      .select('playlist_id,track_id,created_at,tracks(id,title,artist,genre,play_count,like_count,cover_url,audio_url,user_id,created_at)')
+      .select('playlist_id,track_id,created_at,tracks(id,title,artist,genre,cover_url,audio_url,user_id)')
       .in('playlist_id', playlistIds)
       .eq('user_id', userId)
       .order('created_at', { ascending: true })
@@ -363,10 +379,10 @@ function App() {
       return
     }
 
-    const tracksByPlaylist = new Map<string, TrackRow[]>()
+    const tracksByPlaylist = new Map<string, PlaylistTrackData[]>()
     const playlistTrackRows = (playlistTracksData as PlaylistTrackJoinRow[]) || []
     playlistTrackRows.forEach((row) => {
-      const joinedTrack = Array.isArray(row.tracks) ? row.tracks[0] : row.tracks
+      const joinedTrack = getPlaylistJoinedTrack(row.tracks)
       if (!joinedTrack) return
       const existing = tracksByPlaylist.get(row.playlist_id) || []
       existing.push(joinedTrack)
@@ -379,7 +395,7 @@ function App() {
         const reversed = [...tracks].reverse()
         const lastAddedWithCover = reversed.find((track) => Boolean(track.cover_url))
         const collageUrls = tracks
-          .slice(0, 3)
+          .slice(0, MAX_PLAYLIST_COLLAGE_IMAGES)
           .map((track) => sanitizeImageUrl(track.cover_url))
           .filter((url): url is string => Boolean(url))
 
@@ -1341,7 +1357,7 @@ function App() {
                           ) : playlist.collageUrls.length > 0 ? (
                             <div className={getPlaylistCollageGridClassName(playlist.collageUrls.length)}>
                               {playlist.collageUrls.map((url, index) => (
-                                <img key={`${playlist.id}-collage-${index}`} src={url} alt="" aria-hidden="true" />
+                                <img key={`${playlist.id}-collage-${index}`} src={url} alt="" />
                               ))}
                             </div>
                           ) : (
@@ -1512,7 +1528,15 @@ function App() {
                         className="libraryTrackTile"
                         type="button"
                         onClick={() => {
-                          const playlistQueue = activePlaylist.tracks.map(toPlayerTrack)
+                          const playlistQueue = activePlaylist.tracks.map((item) => ({
+                            id: item.id,
+                            title: item.title,
+                            artist: item.artist || 'Unknown Artist',
+                            coverUrl: item.cover_url,
+                            audioUrl: item.audio_url,
+                            genre: item.genre,
+                            userId: item.user_id,
+                          }))
                           const selected = playlistQueue.find((item) => item.id === track.id)
                           if (selected) playTrack(selected, playlistQueue)
                         }}
