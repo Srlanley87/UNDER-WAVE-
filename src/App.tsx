@@ -328,9 +328,10 @@ function App() {
     ])
 
     if (!profileError && profileData) {
-      setProfile(profileData as ProfileRow)
-      setDisplayNameDraft((profileData as ProfileRow).display_name || '')
-      setBioDraft((profileData as ProfileRow).bio || '')
+      const row = profileData as Pick<ProfileRow, 'display_name' | 'avatar_url'>
+      setProfile({ ...EMPTY_PROFILE, display_name: row.display_name || null, avatar_url: row.avatar_url || null })
+      setDisplayNameDraft(row.display_name || '')
+      setBioDraft('')
     } else if (profileError) {
       setDataMessage(profileError.message)
     }
