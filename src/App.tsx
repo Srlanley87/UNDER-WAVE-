@@ -31,6 +31,19 @@ type PlaylistRow = {
   name: string
 }
 
+type PlaylistTrackJoinRow = {
+  playlist_id: string
+  created_at: string
+  track_id: string
+  tracks: TrackRow | TrackRow[] | null
+}
+
+type PlaylistSummary = PlaylistRow & {
+  tracks: TrackRow[]
+  coverUrl: string | null
+  collageUrls: string[]
+}
+
 type CommentRow = {
   id: string
   user_id: string
@@ -44,7 +57,7 @@ type FeedTrack = {
   coverUrl: string | null
 }
 type DiscoveryTrack = FeedTrack & { genre: string | null }
-type LibraryView = 'overview' | 'liked' | 'create-playlist'
+type LibraryView = 'overview' | 'liked' | 'create-playlist' | 'playlist-detail'
 type LibraryFilter = 'playlists' | 'albums' | 'artists' | 'downloaded'
 type ArtistProfileData = {
   id: string
@@ -167,7 +180,7 @@ function App() {
   const [userTracks, setUserTracks] = useState<TrackRow[]>([])
   const [likedTrackIds, setLikedTrackIds] = useState<Set<string>>(new Set())
   const [recentTrackIds, setRecentTrackIds] = useState<string[]>([])
-  const [playlists, setPlaylists] = useState<PlaylistRow[]>([])
+  const [playlists, setPlaylists] = useState<PlaylistSummary[]>([])
 
   const [profile, setProfile] = useState<ProfileRow>(EMPTY_PROFILE)
   const [displayNameDraft, setDisplayNameDraft] = useState('')
@@ -181,6 +194,7 @@ function App() {
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('playlists')
   const [playlistNameDraft, setPlaylistNameDraft] = useState('')
   const [playlistSelectionIds, setPlaylistSelectionIds] = useState<Set<string>>(new Set())
+  const [activePlaylistId, setActivePlaylistId] = useState<string | null>(null)
   const [artistRouteId, setArtistRouteId] = useState<string | null>(null)
   const [artistProfile, setArtistProfile] = useState<ArtistProfileData | null>(null)
   const [artistTracks, setArtistTracks] = useState<TrackRow[]>([])
@@ -317,7 +331,60 @@ function App() {
       return
     }
 
-    setPlaylists((data as PlaylistRow[]) || [])
+    const playlistRows = (data as PlaylistRow[]) || []
+    if (playlistRows.length === 0) {
+      setPlaylists([])
+      return
+    }
+
+    const playlistIds = playlistRows.map((playlist) => playlist.id)
+    const { data: playlistTracksData, error: playlistTracksError } = await supabase
+      .from('playlist_tracks')
+      .select('playlist_id,track_id,created_at,tracks(id,title,artist,genre,play_count,like_count,cover_url,audio_url,user_id,created_at)')
+      .in('playlist_id', playlistIds)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+
+    if (playlistTracksError) {
+      setDataMessage(playlistTracksError.message)
+      setPlaylists(
+        playlistRows.map((playlist) => ({
+          ...playlist,
+          tracks: [],
+          coverUrl: null,
+          collageUrls: [],
+        })),
+      )
+      return
+    }
+
+    const tracksByPlaylist = new Map<string, TrackRow[]>()
+    ;((playlistTracksData as PlaylistTrackJoinRow[]) || []).forEach((row) => {
+      const joinedTrack = Array.isArray(row.tracks) ? row.tracks[0] : row.tracks
+      if (!joinedTrack) return
+      const existing = tracksByPlaylist.get(row.playlist_id) || []
+      existing.push(joinedTrack)
+      tracksByPlaylist.set(row.playlist_id, existing)
+    })
+
+    setPlaylists(
+      playlistRows.map((playlist) => {
+        const tracks = tracksByPlaylist.get(playlist.id) || []
+        const reversed = [...tracks].reverse()
+        const lastAddedWithCover = reversed.find((track) => Boolean(track.cover_url))
+        const collageUrls = tracks
+          .slice(0, 3)
+          .map((track) => sanitizeImageUrl(track.cover_url))
+          .filter((url): url is string => Boolean(url))
+
+        return {
+          ...playlist,
+          tracks,
+          coverUrl: sanitizeImageUrl(lastAddedWithCover?.cover_url),
+          collageUrls,
+        }
+      }),
+    )
   }
 
   const refreshProfile = async (userId: string) => {
@@ -332,6 +399,19 @@ function App() {
       setProfile({ ...EMPTY_PROFILE, display_name: row.display_name || null, avatar_url: row.avatar_url || null })
       setDisplayNameDraft(row.display_name || '')
       setBioDraft('')
+    } else if (!profileError && !profileData) {
+      const fallbackName = getUserDisplayName(null, sessionEmail.trim() || email.trim(), 'Listener')
+      const { error: createProfileError } = await supabase.from('profiles').upsert(
+        {
+          id: userId,
+          display_name: fallbackName,
+        },
+        { onConflict: 'id' },
+      )
+      if (!createProfileError) {
+        setProfile({ ...EMPTY_PROFILE, display_name: fallbackName, avatar_url: null })
+        setDisplayNameDraft(fallbackName)
+      }
     } else if (profileError) {
       setDataMessage(profileError.message)
     }
@@ -707,6 +787,7 @@ function App() {
     if (!sessionUserId || !file) return
 
     setProfileImageUploading(true)
+    setProfileMessage(null)
     const path = `${sessionUserId}/${Date.now()}_${safeFileName(file.name)}`
 
     const { error: uploadError } = await supabase.storage.from(AVATAR_BUCKET).upload(path, file, {
@@ -726,7 +807,7 @@ function App() {
       {
         id: sessionUserId,
         avatar_url: avatarPublic.publicUrl,
-        display_name: displayNameDraft.trim() || null,
+        display_name: resolvedProfileDisplayName,
       },
       { onConflict: 'id' },
     )
@@ -782,6 +863,11 @@ function App() {
       else next.add(trackId)
       return next
     })
+  }
+
+  const openPlaylist = (playlistId: string) => {
+    setActivePlaylistId(playlistId)
+    setLibraryView('playlist-detail')
   }
 
   const handleCreatePlaylistFromSelection = async () => {
@@ -1007,6 +1093,8 @@ function App() {
   )
   const safeCoverPreviewUrl = sanitizeImageUrl(coverPreviewUrl)
   const safeAvatarUrl = sanitizeImageUrl(avatarPreviewUrl || profile.avatar_url)
+  const resolvedProfileDisplayName = getUserDisplayName(displayNameDraft, sessionEmail.trim() || email.trim(), 'Listener')
+  const activePlaylist = useMemo(() => playlists.find((playlist) => playlist.id === activePlaylistId) || null, [playlists, activePlaylistId])
 
   if (loadingSession) {
     return <div className="loading">Loading UNDERWAVE...</div>
@@ -1231,13 +1319,23 @@ function App() {
                       <p className="muted">No playlists yet.</p>
                     ) : (
                       playlists.map((playlist) => (
-                        <article key={playlist.id} className="libraryCollectionCard">
-                          <div className="coverFallback">♫</div>
+                        <button key={playlist.id} type="button" className="libraryCollectionCard playlistCollectionCard" onClick={() => openPlaylist(playlist.id)}>
+                          {playlist.coverUrl ? (
+                            <img src={playlist.coverUrl} alt={`${playlist.name} cover`} />
+                          ) : playlist.collageUrls.length > 0 ? (
+                            <div className={`playlistCollage playlistCollage${Math.min(playlist.collageUrls.length, 3)}`}>
+                              {playlist.collageUrls.map((url, index) => (
+                                <img key={`${playlist.id}-collage-${index}`} src={url} alt="" aria-hidden="true" />
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="coverFallback">♫</div>
+                          )}
                           <div>
                             <strong>{playlist.name}</strong>
-                            <span>Playlist</span>
+                            <span>{playlist.tracks.length} Track{playlist.tracks.length === 1 ? '' : 's'}</span>
                           </div>
-                        </article>
+                        </button>
                       ))
                     ))}
 
@@ -1377,6 +1475,39 @@ function App() {
                 <PremiumButton className="primaryButton" onClick={handleCreatePlaylistFromSelection}>
                   Create Playlist with {playlistSelectionIds.size} Track{playlistSelectionIds.size === 1 ? '' : 's'}
                 </PremiumButton>
+              </div>
+            )}
+
+            {libraryView === 'playlist-detail' && (
+              <div className="libraryPage">
+                <div className="libraryPageTop">
+                  <PremiumButton className="iconButton" onClick={() => setLibraryView('overview')}>
+                    <ArrowLeft size={18} />
+                  </PremiumButton>
+                  <h3>{activePlaylist?.name || 'Playlist'}</h3>
+                </div>
+                <div className="libraryTrackGrid">
+                  {!activePlaylist || activePlaylist.tracks.length === 0 ? (
+                    <p className="muted">No tracks in this playlist yet.</p>
+                  ) : (
+                    activePlaylist.tracks.map((track) => (
+                      <button
+                        key={track.id}
+                        className="libraryTrackTile"
+                        type="button"
+                        onClick={() => {
+                          const playlistQueue = activePlaylist.tracks.map(toPlayerTrack)
+                          const selected = playlistQueue.find((item) => item.id === track.id)
+                          if (selected) playTrack(selected, playlistQueue)
+                        }}
+                      >
+                        {track.cover_url ? <img src={track.cover_url} alt={track.title} /> : <div className="coverFallback">♪</div>}
+                        <strong>{track.title}</strong>
+                        <span>{track.artist || 'Unknown Artist'}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
               </div>
             )}
           </section>
@@ -1537,6 +1668,7 @@ function App() {
           closeArtistRoute()
           setActiveTab(tab)
           if (tab === 'library') setLibraryView('overview')
+          setActivePlaylistId(null)
         }}
         currentTrack={currentTrack}
         isPlaying={isPlaying}
@@ -1556,7 +1688,7 @@ function App() {
         onCommentDraftChange={setCommentDraft}
         onSubmitComment={handleSubmitComment}
         submittingComment={commentSubmitting}
-        playlists={playlists}
+        playlists={playlists.map((playlist) => ({ id: playlist.id, name: playlist.name }))}
         onAddCurrentTrackToPlaylist={handleAddToPlaylist}
         onViewArtistProfile={openArtistRoute}
         onShareTrack={handleShare}

@@ -187,17 +187,10 @@ export function AppLayout({
           animate={{ y: 0, opacity: 1, x: '-50%' }}
           style={{
             position: 'fixed',
-            bottom: '76px',
+            bottom: 'calc(var(--bottom-nav-height) + 1.65rem)',
             left: '50%',
-            width: 'calc(100% - 24px)',
-            maxWidth: '500px',
-            borderRadius: '30px',
-            background: 'rgba(30, 30, 35, 0.95)',
-            backdropFilter: 'blur(16px)',
-            display: 'flex',
-            alignItems: 'center',
-            padding: '6px 16px 6px 6px',
-            gap: '12px',
+            width: 'calc(100% - 32px)',
+            maxWidth: '600px',
             zIndex: 9998,
           }}
         >
@@ -289,6 +282,7 @@ export function AppLayout({
               <small style={{ display: 'block' }}>
                 <button
                   type="button"
+                  className="miniArtistLink"
                   onClick={(event) => {
                     event.stopPropagation()
                     onViewArtistProfile(currentTrack.userId)
@@ -300,7 +294,6 @@ export function AppLayout({
                     margin: 0,
                     color: '#A0A0A0',
                     fontSize: '12px',
-                    width: '100%',
                     textAlign: 'left',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
