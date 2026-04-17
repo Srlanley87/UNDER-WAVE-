@@ -257,6 +257,9 @@ small,
   padding: 0;
   cursor: pointer;
   text-decoration: none;
+  display: inline-flex;
+  max-width: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .miniArtistLink:hover,
@@ -769,6 +772,42 @@ input:focus::placeholder {
   gap: 0.36rem;
   text-align: left;
   color: #fff;
+}
+
+.playlistCollectionCard {
+  cursor: pointer;
+}
+
+.playlistCollage {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  display: grid;
+  gap: 2px;
+}
+
+.playlistCollage img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.playlistCollage1 {
+  grid-template-columns: 1fr;
+}
+
+.playlistCollage2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.playlistCollage3 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.playlistCollage3 img:first-child {
+  grid-row: 1 / span 2;
 }
 
 .libraryCollectionCard img,
