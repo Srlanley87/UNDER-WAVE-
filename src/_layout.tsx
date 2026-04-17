@@ -187,9 +187,11 @@ export function AppLayout({
           animate={{ y: 0, opacity: 1 }}
           style={{
             position: 'fixed',
-            bottom: '80px',
-            left: '5px',
-            right: '5px',
+            bottom: '76px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 'calc(100% - 24px)',
+            maxWidth: '500px',
             borderRadius: '30px',
             background: 'rgba(30, 30, 35, 0.95)',
             backdropFilter: 'blur(16px)',
