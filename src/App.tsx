@@ -125,6 +125,10 @@ function toBackgroundImage(url: string) {
   return `url("${url.replace(/"/g, '%22')}")`
 }
 
+function getPlaylistCollageClassName(count: number) {
+  return `playlistCollage playlistCollage${Math.min(Math.max(count, 1), 3)}`
+}
+
 function UnderwaveLogo() {
   return (
     <div className="authLogo" aria-label="Underwave logo" role="img">
@@ -214,6 +218,7 @@ function App() {
   const avatarInputRef = useRef<HTMLInputElement | null>(null)
   const nextTrackRef = useRef<(() => void) | null>(null)
   const lastPlayEventTrackIdRef = useRef<string | null>(null)
+  const profileNameSeed = useMemo(() => sessionEmail.trim() || email.trim(), [sessionEmail, email])
 
   const {
     currentTrack,
@@ -400,7 +405,7 @@ function App() {
       setDisplayNameDraft(row.display_name || '')
       setBioDraft('')
     } else if (!profileError && !profileData) {
-      const fallbackName = getUserDisplayName(null, sessionEmail.trim() || email.trim(), 'Listener')
+      const fallbackName = getUserDisplayName(null, profileNameSeed, 'Listener')
       const { error: createProfileError } = await supabase.from('profiles').upsert(
         {
           id: userId,
@@ -422,7 +427,7 @@ function App() {
       setFollowersCount(followers.count || 0)
       setFollowingCount(following.count || 0)
     }
-  }, [email, sessionEmail])
+  }, [profileNameSeed])
 
   useEffect(() => {
     if (!sessionUserId) {
@@ -788,6 +793,7 @@ function App() {
 
     setProfileImageUploading(true)
     setProfileMessage(null)
+    const displayNameForUpload = getUserDisplayName(displayNameDraft, profileNameSeed, 'Listener')
     const path = `${sessionUserId}/${Date.now()}_${safeFileName(file.name)}`
 
     const { error: uploadError } = await supabase.storage.from(AVATAR_BUCKET).upload(path, file, {
@@ -807,7 +813,7 @@ function App() {
       {
         id: sessionUserId,
         avatar_url: avatarPublic.publicUrl,
-        display_name: resolvedProfileDisplayName,
+        display_name: displayNameForUpload,
       },
       { onConflict: 'id' },
     )
@@ -1093,7 +1099,6 @@ function App() {
   )
   const safeCoverPreviewUrl = sanitizeImageUrl(coverPreviewUrl)
   const safeAvatarUrl = sanitizeImageUrl(avatarPreviewUrl || profile.avatar_url)
-  const resolvedProfileDisplayName = getUserDisplayName(displayNameDraft, sessionEmail.trim() || email.trim(), 'Listener')
   const activePlaylist = useMemo(() => playlists.find((playlist) => playlist.id === activePlaylistId) || null, [playlists, activePlaylistId])
 
   if (loadingSession) {
@@ -1323,7 +1328,7 @@ function App() {
                           {playlist.coverUrl ? (
                             <img src={playlist.coverUrl} alt={`${playlist.name} cover`} />
                           ) : playlist.collageUrls.length > 0 ? (
-                            <div className={`playlistCollage playlistCollage${Math.min(playlist.collageUrls.length, 3)}`}>
+                            <div className={getPlaylistCollageClassName(playlist.collageUrls.length)}>
                               {playlist.collageUrls.map((url, index) => (
                                 <img key={`${playlist.id}-collage-${index}`} src={url} alt="" aria-hidden="true" />
                               ))}
