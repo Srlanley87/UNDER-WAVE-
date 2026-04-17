@@ -188,9 +188,9 @@ export function AppLayout({
           style={{
             position: 'fixed',
             bottom: '76px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: 'calc(100% - 24px)',
+            left: '12px',
+            right: '12px',
+            margin: '0 auto',
             maxWidth: '500px',
             borderRadius: '30px',
             background: 'rgba(30, 30, 35, 0.95)',
