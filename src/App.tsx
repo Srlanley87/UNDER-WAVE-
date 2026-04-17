@@ -63,107 +63,6 @@ const COVER_BUCKET =
   'cover'
 const AVATAR_BUCKET = 'avatars'
 
-const REQUIRED_TABLE_SQL: Record<
-  'tracks' | 'profiles' | 'likes' | 'follows' | 'playlists' | 'playlist_tracks' | 'comments' | 'play_events',
-  string
-> = {
-  tracks: `create table if not exists public.tracks (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  title text not null,
-  artist text,
-  genre text,
-  audio_url text not null,
-  cover_url text,
-  play_count integer not null default 0,
-  like_count integer not null default 0,
-  created_at timestamptz not null default now()
-);
-alter table public.tracks enable row level security;
-create policy "tracks_select_all" on public.tracks for select using (true);
-create policy "tracks_insert_own" on public.tracks for insert with check (auth.uid() = user_id);
-create policy "tracks_update_own" on public.tracks for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "tracks_delete_own" on public.tracks for delete using (auth.uid() = user_id);`,
-  profiles: `create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  display_name text,
-  avatar_url text,
-  bio text,
-  updated_at timestamptz not null default now()
-);
-alter table public.profiles enable row level security;
-create policy "profiles_select_all" on public.profiles for select using (true);
-create policy "profiles_insert_own" on public.profiles for insert with check (auth.uid() = id);
-create policy "profiles_update_own" on public.profiles for update using (auth.uid() = id) with check (auth.uid() = id);`,
-  likes: `create table if not exists public.likes (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  track_id uuid not null references public.tracks(id) on delete cascade,
-  created_at timestamptz not null default now(),
-  unique (user_id, track_id)
-);
-alter table public.likes enable row level security;
-create policy "likes_select_own" on public.likes for select using (auth.uid() = user_id);
-create policy "likes_insert_own" on public.likes for insert with check (auth.uid() = user_id);
-create policy "likes_delete_own" on public.likes for delete using (auth.uid() = user_id);`,
-  follows: `create table if not exists public.follows (
-  id uuid primary key default gen_random_uuid(),
-  follower_id uuid not null references auth.users(id) on delete cascade,
-  following_id uuid not null references auth.users(id) on delete cascade,
-  created_at timestamptz not null default now(),
-  unique (follower_id, following_id),
-  check (follower_id <> following_id)
-);
-alter table public.follows enable row level security;
-create policy "follows_select_all" on public.follows for select using (true);
-create policy "follows_insert_own" on public.follows for insert with check (auth.uid() = follower_id);
-create policy "follows_delete_own" on public.follows for delete using (auth.uid() = follower_id);`,
-  playlists: `create table if not exists public.playlists (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  name text not null,
-  created_at timestamptz not null default now()
-);
-alter table public.playlists enable row level security;
-create policy "playlists_select_own" on public.playlists for select using (auth.uid() = user_id);
-create policy "playlists_insert_own" on public.playlists for insert with check (auth.uid() = user_id);
-create policy "playlists_update_own" on public.playlists for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "playlists_delete_own" on public.playlists for delete using (auth.uid() = user_id);`,
-  playlist_tracks: `create table if not exists public.playlist_tracks (
-  id uuid primary key default gen_random_uuid(),
-  playlist_id uuid not null references public.playlists(id) on delete cascade,
-  track_id uuid not null references public.tracks(id) on delete cascade,
-  user_id uuid not null references auth.users(id) on delete cascade,
-  created_at timestamptz not null default now(),
-  unique (playlist_id, track_id)
-);
-alter table public.playlist_tracks enable row level security;
-create policy "playlist_tracks_select_own" on public.playlist_tracks for select using (auth.uid() = user_id);
-create policy "playlist_tracks_insert_own" on public.playlist_tracks for insert with check (auth.uid() = user_id);
-create policy "playlist_tracks_delete_own" on public.playlist_tracks for delete using (auth.uid() = user_id);`,
-  comments: `create table if not exists public.comments (
-  id uuid primary key default gen_random_uuid(),
-  track_id uuid not null references public.tracks(id) on delete cascade,
-  user_id uuid not null references auth.users(id) on delete cascade,
-  body text not null,
-  created_at timestamptz not null default now()
-);
-alter table public.comments enable row level security;
-create policy "comments_select_all" on public.comments for select using (true);
-create policy "comments_insert_own" on public.comments for insert with check (auth.uid() = user_id);
-create policy "comments_update_own" on public.comments for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "comments_delete_own" on public.comments for delete using (auth.uid() = user_id);`,
-  play_events: `create table if not exists public.play_events (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  track_id uuid not null references public.tracks(id) on delete cascade,
-  created_at timestamptz not null default now()
-);
-alter table public.play_events enable row level security;
-create policy "play_events_select_own" on public.play_events for select using (auth.uid() = user_id);
-create policy "play_events_insert_own" on public.play_events for insert with check (auth.uid() = user_id);`,
-}
-
 function safeFileName(fileName: string) {
   return fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
 }
@@ -192,16 +91,6 @@ function toPlayerTrack(track: TrackRow): PlayerTrack {
     genre: track.genre,
     userId: track.user_id,
   }
-}
-
-function isMissingTableError(error: { code?: string; message?: string } | null, tableName: string) {
-  if (!error) return false
-  if (error.code === '42P01') return true
-  return (error.message || '').toLowerCase().includes(`relation "${tableName}"`)
-}
-
-function getTableSqlMessage(table: keyof typeof REQUIRED_TABLE_SQL) {
-  return `Missing required table "${table}". Run this SQL in Supabase:\ncreate extension if not exists pgcrypto;\n${REQUIRED_TABLE_SQL[table]}`
 }
 
 function sanitizeImageUrl(url: string | null | undefined) {
@@ -377,10 +266,6 @@ function App() {
       .limit(240)
 
     if (error) {
-      if (isMissingTableError(error, 'tracks')) {
-        setDataMessage(getTableSqlMessage('tracks'))
-        return
-      }
       setDataMessage(error.message)
       return
     }
@@ -397,10 +282,6 @@ function App() {
 
   const refreshLikes = async (userId: string) => {
     const { data, error } = await supabase.from('likes').select('track_id').eq('user_id', userId)
-    if (isMissingTableError(error, 'likes')) {
-      setDataMessage(getTableSqlMessage('likes'))
-      return
-    }
     if (error) {
       setDataMessage(error.message)
       return
@@ -417,12 +298,7 @@ function App() {
       .order('created_at', { ascending: false })
       .limit(40)
 
-    if (error) {
-      if (isMissingTableError(error, 'play_events')) {
-        setDataMessage(getTableSqlMessage('play_events'))
-      }
-      return
-    }
+    if (error) return
 
     const rows = (data as Array<{ track_id: string }>) || []
     const unique = Array.from(new Set(rows.map((row) => row.track_id)))
@@ -436,10 +312,6 @@ function App() {
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
 
-    if (isMissingTableError(error, 'playlists')) {
-      setDataMessage(getTableSqlMessage('playlists'))
-      return
-    }
     if (error) {
       setDataMessage(error.message)
       return
@@ -450,7 +322,7 @@ function App() {
 
   const refreshProfile = async (userId: string) => {
     const [{ data: profileData, error: profileError }, followers, following] = await Promise.all([
-      supabase.from('profiles').select('display_name,avatar_url,bio').eq('id', userId).maybeSingle(),
+      supabase.from('profiles').select('display_name,avatar_url').eq('id', userId).maybeSingle(),
       supabase.from('follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', userId),
       supabase.from('follows').select('following_id', { count: 'exact', head: true }).eq('follower_id', userId),
     ])
@@ -459,12 +331,12 @@ function App() {
       setProfile(profileData as ProfileRow)
       setDisplayNameDraft((profileData as ProfileRow).display_name || '')
       setBioDraft((profileData as ProfileRow).bio || '')
-    } else if (isMissingTableError(profileError, 'profiles')) {
-      setDataMessage(getTableSqlMessage('profiles'))
+    } else if (profileError) {
+      setDataMessage(profileError.message)
     }
 
-    if (isMissingTableError(followers.error, 'follows') || isMissingTableError(following.error, 'follows')) {
-      setDataMessage(getTableSqlMessage('follows'))
+    if (followers.error || following.error) {
+      setDataMessage(followers.error?.message || following.error?.message || 'Unable to load follow counts.')
     } else {
       setFollowersCount(followers.count || 0)
       setFollowingCount(following.count || 0)
@@ -521,10 +393,6 @@ function App() {
         .order('created_at', { ascending: false })
         .limit(50)
 
-      if (isMissingTableError(error, 'comments')) {
-        setDataMessage(getTableSqlMessage('comments'))
-        return
-      }
       if (error) {
         setDataMessage(error.message)
         return
@@ -623,10 +491,6 @@ function App() {
       .from('play_events')
       .insert({ user_id: sessionUserId, track_id: currentTrack.id })
       .then(({ error }) => {
-        if (isMissingTableError(error, 'play_events')) {
-          setDataMessage(getTableSqlMessage('play_events'))
-          return
-        }
         if (error) return
         void refreshRecent(sessionUserId)
       })
@@ -789,10 +653,6 @@ function App() {
       : supabase.from('likes').insert({ user_id: sessionUserId, track_id: currentTrack.id })
 
     const { error } = await query
-    if (isMissingTableError(error, 'likes')) {
-      setDataMessage(getTableSqlMessage('likes'))
-      return
-    }
     if (error) {
       setDataMessage(error.message)
     }
@@ -808,9 +668,7 @@ function App() {
       body: commentDraft.trim(),
     })
 
-    if (isMissingTableError(error, 'comments')) {
-      setDataMessage(getTableSqlMessage('comments'))
-    } else if (error) {
+    if (error) {
       setDataMessage(error.message)
     } else {
       setCommentDraft('')
@@ -828,7 +686,6 @@ function App() {
       {
         id: sessionUserId,
         display_name: displayNameDraft.trim() || null,
-        bio: bioDraft.trim() || null,
       },
       { onConflict: 'id' },
     )
@@ -841,7 +698,6 @@ function App() {
     setProfile((prev) => ({
       ...prev,
       display_name: displayNameDraft.trim() || null,
-      bio: bioDraft.trim() || null,
     }))
     setProfileMessage('Profile updated.')
   }
@@ -870,7 +726,6 @@ function App() {
         id: sessionUserId,
         avatar_url: avatarPublic.publicUrl,
         display_name: displayNameDraft.trim() || null,
-        bio: bioDraft.trim() || null,
       },
       { onConflict: 'id' },
     )
@@ -905,9 +760,7 @@ function App() {
       user_id: sessionUserId,
     })
 
-    if (isMissingTableError(error, 'playlist_tracks')) {
-      setDataMessage(getTableSqlMessage('playlist_tracks'))
-    } else if (error) {
+    if (error) {
       setDataMessage(error.message)
     } else {
       setDataMessage('Added to playlist.')
@@ -950,10 +803,6 @@ function App() {
       .select('id')
       .single()
 
-    if (isMissingTableError(playlistError, 'playlists')) {
-      setDataMessage(getTableSqlMessage('playlists'))
-      return
-    }
     if (playlistError || !playlistData) {
       setDataMessage(playlistError?.message || 'Unable to create playlist.')
       return
@@ -966,10 +815,6 @@ function App() {
     }))
 
     const { error: playlistTracksError } = await supabase.from('playlist_tracks').insert(inserts)
-    if (isMissingTableError(playlistTracksError, 'playlist_tracks')) {
-      setDataMessage(getTableSqlMessage('playlist_tracks'))
-      return
-    }
     if (playlistTracksError) {
       setDataMessage(playlistTracksError.message)
       return
@@ -1034,7 +879,7 @@ function App() {
       }
 
       const [{ data: artistProfileRow }, { data: artistTrackRows, error: artistTracksError }, followers] = await Promise.all([
-        supabase.from('profiles').select('id,display_name,avatar_url,bio').eq('id', artistRouteId).maybeSingle(),
+        supabase.from('profiles').select('id,display_name,avatar_url').eq('id', artistRouteId).maybeSingle(),
         supabase
           .from('tracks')
           .select('id,title,artist,genre,play_count,like_count,cover_url,audio_url,user_id,created_at')
@@ -1043,8 +888,8 @@ function App() {
         supabase.from('follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', artistRouteId),
       ])
 
-      if (isMissingTableError(artistTracksError, 'tracks')) {
-        setDataMessage(getTableSqlMessage('tracks'))
+      if (artistTracksError) {
+        setDataMessage(artistTracksError.message)
         return
       }
 
@@ -1099,11 +944,6 @@ function App() {
       ? supabase.from('follows').delete().eq('follower_id', sessionUserId).eq('following_id', artistRouteId)
       : supabase.from('follows').insert({ follower_id: sessionUserId, following_id: artistRouteId })
     const { error } = await query
-    if (isMissingTableError(error, 'follows')) {
-      setDataMessage(getTableSqlMessage('follows'))
-      setArtistFollowLoading(false)
-      return
-    }
     if (error) {
       setDataMessage(error.message)
       setArtistFollowLoading(false)
@@ -1722,7 +1562,7 @@ function App() {
       >
         {renderTab()}
       </AppLayout>
-      {dataMessage && <pre className="sqlMessage">{dataMessage}</pre>}
+      {dataMessage && <p className="message">{dataMessage}</p>}
     </>
   )
 }
