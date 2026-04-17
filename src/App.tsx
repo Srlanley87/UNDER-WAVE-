@@ -1329,11 +1329,17 @@ function App() {
                       <p className="muted">No playlists yet.</p>
                     ) : (
                       playlists.map((playlist) => (
-                        <button key={playlist.id} type="button" className="libraryCollectionCard playlistCollectionCard" onClick={() => openPlaylist(playlist.id)}>
+                        <button
+                          key={playlist.id}
+                          type="button"
+                          className="libraryCollectionCard playlistCollectionCard"
+                          onClick={() => openPlaylist(playlist.id)}
+                          aria-label={`Open playlist ${playlist.name}`}
+                        >
                           {playlist.coverUrl ? (
                             <img src={playlist.coverUrl} alt={`${playlist.name} cover`} />
                           ) : playlist.collageUrls.length > 0 ? (
-                            <div className={getPlaylistCollageGridClassName(playlist.collageUrls.length)} aria-label={`${playlist.name} artwork collage`}>
+                            <div className={getPlaylistCollageGridClassName(playlist.collageUrls.length)}>
                               {playlist.collageUrls.map((url, index) => (
                                 <img key={`${playlist.id}-collage-${index}`} src={url} alt="" aria-hidden="true" />
                               ))}
