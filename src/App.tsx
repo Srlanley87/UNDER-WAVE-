@@ -125,7 +125,7 @@ function toBackgroundImage(url: string) {
   return `url("${url.replace(/"/g, '%22')}")`
 }
 
-function getPlaylistCollageClassName(count: number) {
+function getPlaylistCollageGridClassName(count: number) {
   return `playlistCollage playlistCollage${Math.min(Math.max(count, 1), 3)}`
 }
 
@@ -364,7 +364,8 @@ function App() {
     }
 
     const tracksByPlaylist = new Map<string, TrackRow[]>()
-    ;((playlistTracksData as PlaylistTrackJoinRow[]) || []).forEach((row) => {
+    const playlistTrackRows = (playlistTracksData as PlaylistTrackJoinRow[]) || []
+    playlistTrackRows.forEach((row) => {
       const joinedTrack = Array.isArray(row.tracks) ? row.tracks[0] : row.tracks
       if (!joinedTrack) return
       const existing = tracksByPlaylist.get(row.playlist_id) || []
@@ -392,6 +393,21 @@ function App() {
     )
   }
 
+  const ensureProfileRecord = useCallback(async (userId: string) => {
+    const fallbackName = getUserDisplayName(null, profileNameSeed, 'Listener')
+    const { error: createProfileError } = await supabase.from('profiles').upsert(
+      {
+        id: userId,
+        display_name: fallbackName,
+      },
+      { onConflict: 'id' },
+    )
+    if (!createProfileError) {
+      setProfile({ ...EMPTY_PROFILE, display_name: fallbackName, avatar_url: null })
+      setDisplayNameDraft(fallbackName)
+    }
+  }, [profileNameSeed])
+
   const refreshProfile = useCallback(async (userId: string) => {
     const [{ data: profileData, error: profileError }, followers, following] = await Promise.all([
       supabase.from('profiles').select('display_name,avatar_url').eq('id', userId).maybeSingle(),
@@ -405,18 +421,7 @@ function App() {
       setDisplayNameDraft(row.display_name || '')
       setBioDraft('')
     } else if (!profileError && !profileData) {
-      const fallbackName = getUserDisplayName(null, profileNameSeed, 'Listener')
-      const { error: createProfileError } = await supabase.from('profiles').upsert(
-        {
-          id: userId,
-          display_name: fallbackName,
-        },
-        { onConflict: 'id' },
-      )
-      if (!createProfileError) {
-        setProfile({ ...EMPTY_PROFILE, display_name: fallbackName, avatar_url: null })
-        setDisplayNameDraft(fallbackName)
-      }
+      await ensureProfileRecord(userId)
     } else if (profileError) {
       setDataMessage(profileError.message)
     }
@@ -427,7 +432,7 @@ function App() {
       setFollowersCount(followers.count || 0)
       setFollowingCount(following.count || 0)
     }
-  }, [profileNameSeed])
+  }, [ensureProfileRecord])
 
   useEffect(() => {
     if (!sessionUserId) {
@@ -1328,7 +1333,7 @@ function App() {
                           {playlist.coverUrl ? (
                             <img src={playlist.coverUrl} alt={`${playlist.name} cover`} />
                           ) : playlist.collageUrls.length > 0 ? (
-                            <div className={getPlaylistCollageClassName(playlist.collageUrls.length)}>
+                            <div className={getPlaylistCollageGridClassName(playlist.collageUrls.length)} aria-label={`${playlist.name} artwork collage`}>
                               {playlist.collageUrls.map((url, index) => (
                                 <img key={`${playlist.id}-collage-${index}`} src={url} alt="" aria-hidden="true" />
                               ))}
