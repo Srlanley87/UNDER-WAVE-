@@ -387,7 +387,7 @@ function App() {
     )
   }
 
-  const refreshProfile = async (userId: string) => {
+  const refreshProfile = useCallback(async (userId: string) => {
     const [{ data: profileData, error: profileError }, followers, following] = await Promise.all([
       supabase.from('profiles').select('display_name,avatar_url').eq('id', userId).maybeSingle(),
       supabase.from('follows').select('follower_id', { count: 'exact', head: true }).eq('following_id', userId),
@@ -422,7 +422,7 @@ function App() {
       setFollowersCount(followers.count || 0)
       setFollowingCount(following.count || 0)
     }
-  }
+  }, [email, sessionEmail])
 
   useEffect(() => {
     if (!sessionUserId) {
@@ -442,7 +442,7 @@ function App() {
       refreshPlaylists(sessionUserId),
       refreshProfile(sessionUserId),
     ])
-  }, [sessionUserId, refreshTracks])
+  }, [sessionUserId, refreshTracks, refreshProfile])
 
   useEffect(() => {
     const parseArtistPath = () => {
